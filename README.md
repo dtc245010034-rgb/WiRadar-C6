@@ -25,7 +25,8 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 ## Cấu trúc thư mục
 | Thư mục | Nội dung |
 |---|---|
-| `firmware/WiRadar_C6/` | **Firmware** (Arduino): AP cấu hình, web, TFT, nút bấm, radar, xuất dữ liệu qua USB |
+| `firmware/WiRadar_C6/` | **Firmware đầy đủ** (Arduino): AP cấu hình, web điện thoại, TFT, nút bấm, radar, xuất dữ liệu qua USB |
+| `firmware/WiRadar_C6_Lite/` | **Bản Lite, chỉ phần cứng** (không web, không AP): TFT + DHT11 + nút, nối thẳng vào router |
 | `scripts/flash.sh` | Biên dịch / nạp firmware bằng arduino-cli |
 | `run2_viewer.sh`, `run_viewer.sh` | Chạy cửa sổ radar / đồ thị CSI thô trên máy tính |
 | `viewer/` | Cửa sổ radar trên máy tính (`radar_viewer.py`) và công cụ vẽ CSI của Espressif |
@@ -37,7 +38,10 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 1. Cài core **esp32 by Espressif Systems 3.x trở lên** (có hỗ trợ ESP32-C6).
 2. Cài thư viện: *Adafruit GFX*, *Adafruit ST7735 and ST7789*, *DHT sensor library*, *Adafruit Unified Sensor*.
 3. Mở `firmware/WiRadar_C6/WiRadar_C6.ino`. Chọn board **ESP32C6 Dev Module**, *Flash Size 16MB*, *USB CDC On Boot: Disabled*.
-4. Upload (hoặc dùng `./scripts/flash.sh upload`). Lần đầu board mở AP `WiRadar-C6-Setup` (xem Serial **921600** hoặc màn hình để biết IP). Mở cổng serial có thể làm board tự khởi động lại; đó là bình thường.
+4. Upload (hoặc dùng `./scripts/flash.sh upload`; bản Lite: `./scripts/flash.sh lite upload`). Lần đầu board mở AP `WiRadar-C6-Setup` (xem Serial **921600** hoặc màn hình để biết IP). Mở cổng serial có thể làm board tự khởi động lại; đó là bình thường.
+
+### Bản Lite (không web)
+`WiRadar_C6_Lite` chạy y hệt phần radar / nhiệt độ - độ ẩm / đồ thị trên màn hình TFT nhưng **không có Access Point và trang web**. Nó dùng Wi-Fi đã lưu trên board (do bản đầy đủ cấu hình qua điện thoại); nếu chưa có thì copy `firmware/WiRadar_C6_Lite/secrets.h.example` thành `secrets.h` và điền Wi-Fi của bạn. Bấm ngắn đổi màn hình, giữ từ 1 giây để hiệu chỉnh lại.
 
 ## Radar trên máy tính
 ```bash

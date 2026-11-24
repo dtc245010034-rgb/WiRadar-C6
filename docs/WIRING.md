@@ -30,7 +30,7 @@ Mot chan nut -> GPIO2, chan con lai -> GND. (Dung dien tro keo len noi san cua c
 - GPIO8, GPIO9, GPIO15: chan khoi dong (strapping). GPIO9 la nut BOOT tren board.
 - GPIO12, GPIO13: USB native.
 
-## Cach dung (firmware WiRadar_C6)
+## Cach dung (firmware WiRadar_C6; ban Lite giong nhung khong co Access Point/web)
 - Bam nut ngan: doi man hinh theo vong **Mang (Wi-Fi/IP) -> Nhiet do/Do am -> Radar -> Do thi -> Mang ...**
 - Giu nut 1-5 giay roi tha: **hieu chinh lai** radar (khi dang o Radar/Do thi).
 - Giu nut **5 giay**: tao lai Access Point `WiRadar-C6-Setup` de cau hinh Wi-Fi moi.
