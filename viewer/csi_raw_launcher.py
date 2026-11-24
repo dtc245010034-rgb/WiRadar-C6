@@ -3,7 +3,7 @@
 
 The tool opens the port itself, which would pulse DTR/RTS and reset the board. This launcher patches
 pyserial so the port is opened quietly (DTR/RTS low) and sends 'C' every second to keep the raw CSI stream on
-(and 'c' when it exits). Works the same with csi_recv_router (it streams all the time and ignores 'C').
+(and 'c' when it exits). Needs the WiRadar_C6 firmware (it only streams raw CSI while 'C' keep-alives arrive).
 """
 import atexit, os, runpy, sys, threading, time
 import serial

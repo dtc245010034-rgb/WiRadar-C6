@@ -13,7 +13,7 @@
 //  * Test without any parts: the board alone works (the phone's link is used as the CSI source).
 //
 // Board: ESP32C6 Dev Module | USB CDC On Boot: Disabled | Flash 16MB
-// Wiring: see ../csi_radar_display/WIRING.md
+// Wiring: see ../../docs/WIRING.md
 // ---------------------------------------------------------------------------
 
 #include <WiFi.h>
@@ -88,7 +88,7 @@ static volatile uint32_t s_rawUntil = 0;     // raw stream is on while 'C' keep-
 static uint32_t s_rawSeq = 0;
 static char s_rawLine[6000];
 
-static void printRawCsi(wifi_csi_info_t *info) {   // same format as csi_recv_router / esp-csi
+static void printRawCsi(wifi_csi_info_t *info) {   // same format as Espressif's esp-csi examples
   const wifi_pkt_rx_ctrl_t *rx = &info->rx_ctrl;
   int n = snprintf(s_rawLine, sizeof(s_rawLine),
       "CSI_DATA,%lu,%02x:%02x:%02x:%02x:%02x:%02x,%d,%d,%d,%d,%d,%d,%lu,%d,%d,%d,%d,\"[%d",

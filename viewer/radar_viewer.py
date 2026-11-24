@@ -4,12 +4,12 @@ Wi-Fi CSI radar viewer (PC side).
 
 Reads the ESP32-C6 over USB serial. Two firmwares are understood (baud is auto-detected):
   * WiRadar_C6.ino      -> "STATE,..." lines at 921600 (motion level already computed on the board)
-  * csi_recv_router.ino -> raw "CSI_DATA,..." lines at 921600 (motion level computed here)
+  * raw "CSI_DATA,..." lines at 921600 (motion level computed here)
 and draws the motion level as a radar:
   - green rings + sweeping beam = idle, red rings + expanding ripples + central glow = motion
   - bar, status text and a scrolling history graph on the right.
 
-The motion algorithm is the same as csi_radar_display.ino running on the board:
+The motion algorithm is the same as the one running on the board (WiRadar_C6.ino):
   per packet: amplitude of each subcarrier, normalised by its mean (removes AGC gain),
   compared with a slowly adapting baseline, then smoothed.
 

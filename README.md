@@ -25,9 +25,9 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 ## Cấu trúc thư mục
 | Thư mục | Nội dung |
 |---|---|
-| `WiRadar_C6/` | **Firmware chính** (Arduino): AP cấu hình, web, TFT, nút bấm, radar |
-| `csi_recv_router/` | Sketch gọn: chỉ xuất `CSI_DATA` qua USB cho công cụ trên máy tính |
-| `csi_radar_display/` | Phiên bản trước (TFT + DHT11 + nút, Wi-Fi cố định trong `secrets.h`) |
+| `firmware/WiRadar_C6/` | **Firmware** (Arduino): AP cấu hình, web, TFT, nút bấm, radar, xuất dữ liệu qua USB |
+| `scripts/flash.sh` | Biên dịch / nạp firmware bằng arduino-cli |
+| `run2_viewer.sh`, `run_viewer.sh` | Chạy cửa sổ radar / đồ thị CSI thô trên máy tính |
 | `viewer/` | Cửa sổ radar trên máy tính (`radar_viewer.py`) và công cụ vẽ CSI của Espressif |
 | `demo/preview.html` | Xem trước giao diện màn hình 128x128 khi chưa có phần cứng |
 | `case/` | Hộp in 3D tham số hoá (`make_case.py`, STL, xem 3D `viewer.html`) |
@@ -36,15 +36,13 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 ## Nạp firmware (Arduino IDE hoặc arduino-cli)
 1. Cài core **esp32 by Espressif Systems 3.x trở lên** (có hỗ trợ ESP32-C6).
 2. Cài thư viện: *Adafruit GFX*, *Adafruit ST7735 and ST7789*, *DHT sensor library*, *Adafruit Unified Sensor*.
-3. Mở `WiRadar_C6/WiRadar_C6.ino`. Chọn board **ESP32C6 Dev Module**, *Flash Size 16MB*, *USB CDC On Boot: Disabled*.
-4. Upload. Lần đầu board mở AP `WiRadar-C6-Setup` (xem Serial **921600** hoặc màn hình để biết IP). Mở cổng serial có thể làm board tự khởi động lại; đó là bình thường.
-
-Với `csi_recv_router/` và `csi_radar_display/`: copy `secrets.h.example` thành `secrets.h` và điền Wi-Fi của bạn (file này không được đưa lên git).
+3. Mở `firmware/WiRadar_C6/WiRadar_C6.ino`. Chọn board **ESP32C6 Dev Module**, *Flash Size 16MB*, *USB CDC On Boot: Disabled*.
+4. Upload (hoặc dùng `./scripts/flash.sh upload`). Lần đầu board mở AP `WiRadar-C6-Setup` (xem Serial **921600** hoặc màn hình để biết IP). Mở cổng serial có thể làm board tự khởi động lại; đó là bình thường.
 
 ## Radar trên máy tính
 ```bash
 python3 -m venv csi-venv && ./csi-venv/bin/pip install -r viewer/requirements.txt
-./run2_viewer.sh            # radar trực quan (tự nhận WiRadar_C6 hoặc csi_recv_router); đóng Serial Monitor trước
+./run2_viewer.sh            # radar trực quan; đóng Serial Monitor trước
 ./run_viewer.sh             # đồ thị CSI thô của Espressif (tự bật luồng CSI_DATA trên WiRadar_C6)
 ```
 
