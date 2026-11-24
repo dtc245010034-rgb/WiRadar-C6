@@ -1,0 +1,13 @@
+# secrets and local-only files
+**/secrets.h
+.claude/
+
+# big or regenerated
+csi-venv/
+data/
+tools/arduino-cli/
+reference/
+build/
+__pycache__/
+*.pyc
+*.log

@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32-C6 Radar Display Preview</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --line:#2a313c; --text:#e6edf3; --mute:#8b949e;
+    --green:#2ea043; --red:#f85149; --blue:#58a6ff; --amber:#d29922;
+  }
+  :root[data-theme="light"]{ --bg:#f4f6f8; --card:#fff; --line:#d8dee4; --text:#1f2328; --mute:#59636e; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:980px;margin:0 auto;padding:24px 16px 48px}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--mute);margin:0 0 24px}
+  .grid{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:24px;align-items:start}
+  @media (max-width:760px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+
+  /* device mockup */
+  .board{background:#0b3d2e;border-radius:10px;padding:14px 14px 12px;width:max-content;max-width:100%;
+         box-shadow:0 8px 28px rgba(0,0,0,.35);margin:0 auto}
+  .pins{display:flex;justify-content:space-between;font:10px/1 ui-monospace,monospace;color:#d9c17a;
+        margin-bottom:8px;padding:0 4px;letter-spacing:.3px}
+  .bezel{background:#000;border-radius:6px;padding:10px;border:2px solid #05261c}
+  canvas#lcd{display:block;width:384px;height:384px;image-rendering:pixelated;background:#000;max-width:100%;height:auto;aspect-ratio:1}
+  .btnrow{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:14px}
+  #hw{width:46px;height:46px;border-radius:50%;border:4px solid #6e7681;background:#21262d;cursor:pointer;
+      box-shadow:0 3px 0 #0b0f14;transition:transform .05s, box-shadow .05s;touch-action:manipulation}
+  #hw.down{transform:translateY(3px);box-shadow:0 0 0 #0b0f14;background:#30363d}
+  .hint{font-size:12px;color:#c8e6d9}
+
+  h2{font-size:14px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+  .ctl{margin-bottom:16px}
+  .ctl label{display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px}
+  .ctl output{color:var(--mute);font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--blue)}
+  button.act{font:inherit;background:var(--blue);color:#04121f;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:600}
+  button.act.sec{background:transparent;color:var(--text);border:1px solid var(--line)}
+  button.act:focus-visible,#hw:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .note{font-size:13px;color:var(--mute);margin:12px 0 0}
+  .note b{color:var(--text)}
+  .pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;border:1px solid var(--line);color:var(--mute)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ESP32-C6 Radar Display &mdash; UI preview</h1>
+  <p class="sub">Simulates the 1.44&Prime; ST7735 screen (128&times;128) with the same layout as the sketch. Nothing here is connected to hardware.</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="board">
+        <div class="pins"><span>GND</span><span>VDD</span><span>SCL</span><span>SDA</span><span>RES</span><span>DC</span><span>CS</span><span>BLK</span></div>
+        <div class="bezel"><canvas id="lcd" width="128" height="128" aria-label="Simulated 128 by 128 TFT screen"></canvas></div>
+        <div class="btnrow">
+          <button id="hw" aria-label="Physical button: tap to switch mode, hold 1 second to recalibrate"></button>
+          <span class="hint">Tap = next mode (Temp &rarr; Radar &rarr; Graph) &nbsp;·&nbsp; Hold 1s = recalibrate</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Controls</h2>
+      <div class="row" style="margin-bottom:16px">
+        <button class="act" id="modeBtn">Switch mode</button>
+        <button class="act sec" id="recalBtn">Recalibrate</button>
+        <button class="act sec" id="walkBtn">Simulate walk-by</button>
+      </div>
+
+      <div class="ctl">
+        <label for="move">Movement near the line router &harr; board <output id="moveO">0%</output></label>
+        <input type="range" id="move" min="0" max="100" value="0">
+      </div>
+      <div class="ctl">
+        <label for="temp">Temperature (DHT11) <output id="tempO">28 &deg;C</output></label>
+        <input type="range" id="temp" min="5" max="45" value="28">
+      </div>
+      <div class="ctl">
+        <label for="hum">Humidity (DHT11) <output id="humO">62 %</output></label>
+        <input type="range" id="hum" min="20" max="95" value="62">
+      </div>
+
+      <p class="note"><span class="pill">Mode: <span id="modeName">Temp / Humidity</span></span></p>
+      <p class="note">
+        <b>How the radar behaves on the real board:</b> after switching to Radar it calibrates for 5&nbsp;seconds
+        (keep the movement slider at 0 during that time). Then any movement between the router and the board
+        turns the ring red and sends ripples out from a glowing core. Faster ripples and a bigger core mean stronger motion. With one board and one router,
+        Wi-Fi CSI can tell <i>that</i> something moved and how strongly, but not <i>where</i>, so nothing on screen marks a position.
+      </p>
+      <p class="note">Text is rendered from a system font, so letters look slightly different from the real display's built-in font.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const W = 128, H = 128;
+  const cv = document.getElementById('lcd');
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  const img = g.createImageData(W, H);
+  const px = new Uint32Array(img.data.buffer);
+
+  // ---------- RGB565-style colors packed as ABGR for ImageData ----------
+  const C = (r, gr, b) => {
+    r = Math.max(0, Math.min(255, r | 0)) & 0xF8;
+    gr = Math.max(0, Math.min(255, gr | 0)) & 0xFC;
+    b = Math.max(0, Math.min(255, b | 0)) & 0xF8;
+    return (255 << 24) | (b << 16) | (gr << 8) | r;
+  };
+  const COL_BG = C(0,0,0), COL_GRID = C(0,70,30), COL_GREEN = C(0,255,90), COL_RED = C(255,50,40),
+        COL_WHITE = C(255,255,255), COL_YEL = C(255,200,0), COL_GRAY = C(110,110,110), COL_BLUE = C(60,160,255), COL_ORG = C(255,140,30);
+
+  // ---------- tiny Adafruit-GFX-like primitives ----------
+  const put = (x, y, c) => { if (x >= 0 && y >= 0 && x < W && y < H) px[y * W + x] = c; };
+  const fillScreen = c => px.fill(c);
+  const fillRect = (x, y, w, h, c) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) put(x + i, y + j, c); };
+  const drawRect = (x, y, w, h, c) => { hl(x, y, w, c); hl(x, y + h - 1, w, c); vl(x, y, h, c); vl(x + w - 1, y, h, c); };
+  const hl = (x, y, w, c) => { for (let i = 0; i < w; i++) put(x + i, y, c); };
+  const vl = (x, y, h, c) => { for (let j = 0; j < h; j++) put(x, y + j, c); };
+  const line = (x0, y0, x1, y1, c) => {
+    let dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, e = dx + dy;
+    for (;;) { put(x0, y0, c); if (x0 === x1 && y0 === y1) break; const e2 = 2 * e;
+      if (e2 >= dy) { e += dy; x0 += sx; } if (e2 <= dx) { e += dx; y0 += sy; } }
+  };
+  const circle = (cx, cy, r, c) => {
+    let x = r, y = 0, e = 1 - r;
+    while (x >= y) {
+      [[x,y],[y,x],[-x,y],[-y,x],[x,-y],[y,-x],[-x,-y],[-y,-x]].forEach(([a,b]) => put(cx + a, cy + b, c));
+      y++; if (e < 0) e += 2 * y + 1; else { x--; e += 2 * (y - x) + 1; }
+    }
+  };
+  const fillCircle = (cx, cy, r, c) => { for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) if (i*i + j*j <= r*r) put(cx + i, cy + j, c); };
+  const roundRect = (x, y, w, h, r, c) => { hl(x + r, y, w - 2*r, c); hl(x + r, y + h - 1, w - 2*r, c); vl(x, y + r, h - 2*r, c); vl(x + w - 1, y + r, h - 2*r, c);
+    [[x+r,y+r,-1,-1],[x+w-1-r,y+r,1,-1],[x+r,y+h-1-r,-1,1],[x+w-1-r,y+h-1-r,1,1]].forEach(([cx,cy,sx,sy]) => {
+      for (let a = 0; a <= 90; a += 6) put(Math.round(cx + sx*r*Math.cos(a*Math.PI/180)), Math.round(cy + sy*r*Math.sin(a*Math.PI/180)), c); }); };
+  const fillRound = (x, y, w, h, r, c) => fillRect(x, y, w, h, c);
+
+  // text: rasterise a system monospace font, threshold to hard pixels, 6x8 cell per char at size 1
+  const tc = document.createElement('canvas'); const tg = tc.getContext('2d', { willReadFrequently: true });
+  function text(str, x, y, size, c) {
+    const cw = 6 * size, ch = 8 * size; tc.width = Math.max(1, str.length * cw); tc.height = ch;
+    tg.clearRect(0, 0, tc.width, tc.height);
+    tg.font = `bold ${Math.round(8.6 * size)}px ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace`;
+    tg.textBaseline = 'top'; tg.fillStyle = '#fff';
+    for (let i = 0; i < str.length; i++) tg.fillText(str[i], i * cw + (cw - tg.measureText(str[i]).width) / 2, -0.5 * size);
+    const d = tg.getImageData(0, 0, tc.width, tc.height).data;
+    for (let j = 0; j < ch; j++) for (let i = 0; i < tc.width; i++) if (d[(j * tc.width + i) * 4 + 3] > 120) put(x + i, y + j, c);
+  }
+
+  // ---------- state (mirrors the sketch) ----------
+  const CAL_SECONDS = 5, DETECT_RATIO = 1.8, FULL_RATIO = 4.0;
+  let mode = 'dht', calibrating = true, calStart = 0, calSum = 0, calN = 0, floorMotion = 0.02;
+  let motion = 0.012, pkts = 0, sweep = 0, lastBlip = 0;
+  const blips = Array.from({ length: 5 }, () => ({ on: false, t: 0 }));
+  const $ = id => document.getElementById(id);
+  const sliders = { move: 0, temp: 28, hum: 62 };
+  let walk = null;
+
+  const HIST_N = 116, HIST_MS = 260; let hist = [], lastHist = 0, pps = 0;
+  function startCalibration() { calibrating = true; calStart = performance.now(); calSum = 0; calN = 0; hist = []; }
+  const nextMode = () => mode === 'dht' ? 'radar' : mode === 'radar' ? 'graph' : 'dht';
+  const motionRatio = () => calibrating ? 1.0 : motion / floorMotion;
+  function setMode(m) {
+    mode = m; if (m === 'radar') startCalibration();
+    $('modeName').textContent = { dht: 'Temp / Humidity', radar: 'Radar', graph: 'Motion graph' }[m];
+  }
+
+  // ---------- screens (same coordinates as the .ino) ----------
+  function drawDht() {
+    fillScreen(COL_BG);
+    text('TEMP / HUMIDITY', 4, 3, 1, COL_GRAY); hl(0, 13, W, COL_GRID);
+    const t = sliders.temp, h = sliders.hum;
+    text('TEMPERATURE', 8, 19, 1, COL_ORG);
+    text(String(Math.round(t)), 8, 29, 3, COL_ORG);
+    text(' C', 8 + 18 * String(Math.round(t)).length, 29 + 8, 2, COL_ORG);
+    roundRect(8, 57, 112, 7, 3, COL_GRAY);
+    const tw = Math.max(0, Math.min(108, Math.round(t / 50 * 108))); if (tw > 0) fillRound(10, 59, tw, 3, 1, COL_ORG);
+    text('HUMIDITY', 8, 70, 1, COL_BLUE);
+    text(String(Math.round(h)), 8, 80, 3, COL_BLUE);
+    text(' %', 8 + 18 * String(Math.round(h)).length, 80 + 8, 2, COL_BLUE);
+    roundRect(8, 107, 112, 7, 3, COL_GRAY);
+    const hw = Math.max(0, Math.min(108, Math.round(h / 100 * 108))); if (hw > 0) fillRound(10, 109, hw, 3, 1, COL_BLUE);
+    text('Press: RADAR', 4, 119, 1, COL_GRAY);
+  }
+
+  function drawRadar(now) {
+    const cx = 64, cy = 58, R = 42;
+    const detect = !calibrating && motion > floorMotion * DETECT_RATIO;
+    const level = calibrating ? 0 : Math.max(0, Math.min(1, (motion - floorMotion) / (floorMotion * (FULL_RATIO - 1))));
+    const ring = detect ? COL_RED : COL_GRID;
+    fillScreen(COL_BG);
+    text('WI-FI RADAR', 4, 3, 1, COL_GREEN);
+    text((pkts % 1000) + 'p', W - 28, 3, 1, COL_GRAY);
+    hl(0, 13, W, COL_GRID);
+    circle(cx, cy, R, ring); circle(cx, cy, Math.floor(R * 2 / 3), COL_GRID); circle(cx, cy, Math.floor(R / 3), COL_GRID);
+    hl(cx - R, cy, 2 * R, COL_GRID); vl(cx, cy - R, 2 * R, COL_GRID);
+    if (detect) circle(cx, cy, R + 1, ring);
+    for (let k = 7; k >= 0; k--) {
+      const a = (sweep - k * 4) * Math.PI / 180, gg = 255 - k * 30;
+      line(cx, cy, cx + Math.trunc(R * Math.cos(a)), cy + Math.trunc(R * Math.sin(a)), detect ? C(gg, gg / 5, gg / 6) : C(0, gg, gg / 3));
+    }
+    if (calibrating) {
+      const left = CAL_SECONDS - Math.floor((now - calStart) / 1000);
+      fillRect(8, cy - 18, 112, 36, COL_BG); drawRect(8, cy - 18, 112, 36, COL_YEL);
+      text('CALIBRATING...', 14, cy - 12, 1, COL_YEL);
+      text('Clear the area', 14, cy - 1, 1, COL_YEL);
+      text('Please wait  ' + Math.max(0, left) + 's', 14, cy + 8, 1, COL_YEL);
+    } else {
+      const period = 700 - 450 * level;
+      if (detect && now - lastBlip > period) {
+        const b = blips.find(b => !b.on);
+        if (b) { b.on = true; b.t = now; }
+        lastBlip = now;
+      }
+      for (const b of blips) if (b.on) {
+        const age = now - b.t; if (age > 1500) { b.on = false; continue; }
+        const f = 255 - age * 255 / 1500;
+        circle(cx, cy, Math.trunc(2 + (R - 2) * age / 1500), C(f, f / 6, 0));
+      }
+      if (detect) fillCircle(cx, cy, 3 + Math.trunc(level * 9) + (Math.floor(now / 120) % 2), C(255, 90, 60));
+    }
+    drawRect(4, 104, W - 8, 6, COL_GRAY);
+    const bw = Math.trunc(level * (W - 12)); if (bw > 0) fillRect(6, 106, bw, 2, detect ? COL_RED : COL_GREEN);
+    if (calibrating) text('Calibrating...', 4, 112, 1, COL_YEL);
+    else if (detect) text('MOTION DETECTED!', 4, 112, 1, COL_RED);
+    else text('Area clear', 4, 112, 1, COL_GREEN);
+    text('Hold: recalibrate', 4, 120, 1, COL_GRAY);
+  }
+
+  function drawGraph() {
+    const detect = !calibrating && motion > floorMotion * DETECT_RATIO;
+    fillScreen(COL_BG);
+    text('MOTION GRAPH 30s', 4, 3, 1, COL_GRAY); hl(0, 13, W, COL_GRID);
+    if (calibrating) text('CALIB.', 4, 19, 2, COL_YEL);
+    else if (detect) text('MOTION', 4, 19, 2, COL_RED);
+    else text('CLEAR', 4, 19, 2, COL_GREEN);
+    const gx = 4, gy = 38, gw = 120, gh = 64, ymax = FULL_RATIO + 0.5;
+    drawRect(gx, gy, gw, gh, COL_GRID);
+    const Y = r => gy + gh - 2 - Math.trunc((gh - 4) * Math.max(0, Math.min(ymax, r)) / ymax);
+    for (let x = gx + 1; x < gx + gw - 1; x += 3) put(x, Y(1.0), COL_GRAY);
+    for (let x = gx + 1; x < gx + gw - 1; x += 6) hl(x, Y(DETECT_RATIO), 3, COL_YEL);
+    const n = hist.length;
+    for (let i = 1; i < n; i++) {
+      const x1 = gx + gw - 2 - (n - 1 - i), x0 = x1 - 1;
+      line(x0, Y(hist[i - 1]), x1, Y(hist[i]), hist[i] > DETECT_RATIO ? COL_RED : COL_GREEN);
+    }
+    text('Now x' + motionRatio().toFixed(1) + '  ' + pps + ' pkt/s', 4, 106, 1, COL_WHITE);
+    text('Hold: recalibrate', 4, 118, 1, COL_GRAY);
+  }
+
+  // ---------- simulation loop (~25 fps like the sketch) ----------
+  let last = 0;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (now - last < 40) return; last = now;
+
+    if (walk) {                                     // smooth walk-by: 0 -> 1 -> 0 over 4 s
+      const p = (now - walk) / 4000;
+      if (p >= 1) { walk = null; sliders.move = 0; } else sliders.move = Math.sin(p * Math.PI);
+      $('move').value = Math.round(sliders.move * 100); $('moveO').textContent = Math.round(sliders.move * 100) + '%';
+    }
+    for (let i = 0; i < 4; i++) {                   // ~100 packets/s
+      const raw = 0.012 * (1 + 0.15 * (Math.random() - 0.5)) * (1 + sliders.move * 5 * (0.7 + 0.6 * Math.random()));
+      motion = 0.95 * motion + 0.05 * raw; pkts++;
+    }
+    if (mode !== 'dht') {
+      if (calibrating) {
+        calSum += motion; calN++;
+        if (now - calStart > CAL_SECONDS * 1000) { if (calN > 0) floorMotion = Math.max(calSum / calN, 0.004); calibrating = false; }
+      }
+      if (now - lastHist >= HIST_MS) { lastHist = now; hist.push(motionRatio()); if (hist.length > HIST_N) hist.shift(); }
+      pps = Math.round(100 + (Math.random() * 6 - 3));
+    }
+    if (mode === 'radar') { sweep = (sweep + 7) % 360; drawRadar(now); }
+    else if (mode === 'graph') drawGraph();
+    else drawDht();
+    g.putImageData(img, 0, 0);
+  }
+
+  // ---------- controls ----------
+  const bind = (id, key, fmt) => $(id).addEventListener('input', e => { sliders[key] = +e.target.value; $(id + 'O').innerHTML = fmt(+e.target.value); });
+  bind('move', 'move', v => v + '%'); sliders.move = 0;
+  $('move').addEventListener('input', e => { sliders.move = +e.target.value / 100; walk = null; });
+  bind('temp', 'temp', v => v + ' &deg;C'); bind('hum', 'hum', v => v + ' %');
+  $('modeBtn').onclick = () => setMode(nextMode());
+  $('recalBtn').onclick = () => { if (mode === 'dht') setMode('radar'); else startCalibration(); };
+  $('walkBtn').onclick = () => { if (mode === 'dht') setMode('radar'); if (!calibrating) walk = performance.now(); else alert('Wait for calibration to finish first.'); };
+
+  // physical button: tap = switch, hold >= 1 s = recalibrate (radar mode), same as the sketch
+  const hw = $('hw'); let downAt = 0, longFired = false, timer = null;
+  const down = e => { e.preventDefault(); if (downAt) return; downAt = performance.now(); longFired = false; hw.classList.add('down');
+    timer = setTimeout(() => { longFired = true; if (mode !== 'dht') startCalibration(); }, 1000); };
+  const up = () => { if (!downAt) return; clearTimeout(timer); hw.classList.remove('down'); if (!longFired) setMode(nextMode()); downAt = 0; };
+  hw.addEventListener('pointerdown', down); window.addEventListener('pointerup', up); hw.addEventListener('pointerleave', () => { if (downAt) up(); });
+  hw.addEventListener('keydown', e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) down(e); });
+  hw.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') up(); });
+
+  setMode('dht');
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
