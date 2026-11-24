@@ -3,7 +3,7 @@
 Wi-Fi CSI radar viewer (PC side).
 
 Reads the ESP32-C6 over USB serial. Two firmwares are understood (baud is auto-detected):
-  * WiRadar_C6.ino      -> "STATE,..." lines at 115200 (motion level already computed on the board)
+  * WiRadar_C6.ino      -> "STATE,..." lines at 921600 (motion level already computed on the board)
   * csi_recv_router.ino -> raw "CSI_DATA,..." lines at 921600 (motion level computed here)
 and draws the motion level as a radar:
   - green rings + sweeping beam = idle, red rings + expanding ripples + central glow = motion
@@ -41,6 +41,7 @@ class CsiEngine:
     def __init__(self, port, baud, record=None):
         self.port, self.baud = port, baud          # baud None = auto-detect
         self.state_mode = False
+        self.last_state = 0.0
         self.state_level, self.cal_left, self.pps_val = 0.0, CAL_SECONDS, 0
         self.record = open(record, 'a') if record else None
         self.base = None
@@ -90,7 +91,7 @@ class CsiEngine:
         return s
 
     def _run(self):
-        bauds = [self.baud] if self.baud else [115200, 921600]
+        bauds = [self.baud] if self.baud else [921600, 115200]
         i = 0
         while not self._stop:
             baud = bauds[i % len(bauds)]
@@ -101,6 +102,10 @@ class CsiEngine:
                 time.sleep(1.0)
                 continue
             self.error = None
+            try:
+                s.write(b'c')                  # make sure the raw CSI stream is off (WiRadar_C6)
+            except Exception:
+                pass
             ok = self._pump(s, probe=len(bauds) > 1)
             try:
                 s.close()
@@ -141,6 +146,7 @@ class CsiEngine:
             return
         now = time.time()
         self.state_mode = True
+        self.last_state = now
         self.floor = max(floor, 1e-6)
         self.motion = ratio * self.floor
         self.state_level = level
@@ -158,6 +164,8 @@ class CsiEngine:
         if line.startswith('STATE,'):
             self._state(line)
             return
+        if self.state_mode and time.time() - self.last_state < 1.5:
+            return                             # board already sends STATE; ignore raw lines
         self.state_mode = False
         m = LINE_RE.match(line)
         if not m:

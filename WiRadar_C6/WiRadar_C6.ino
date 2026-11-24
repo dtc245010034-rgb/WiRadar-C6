@@ -8,7 +8,8 @@
 //        short press      next screen            (NET -> TEMP/HUM -> RADAR -> GRAPH -> NET)
 //        hold 1..5 s      recalibrate the radar  (on release)
 //        hold 5 s         start the setup Access Point again
-//  * USB serial (115200): prints STATE lines that run2_viewer.sh draws as a radar on the PC.
+//  * USB serial (921600): prints STATE lines that run2_viewer.sh draws as a radar on the PC.
+//    Send 'C' (repeat every second) to also stream raw CSI_DATA lines (run_viewer.sh does this), 'c' to stop.
 //  * Test without any parts: the board alone works (the phone's link is used as the CSI source).
 //
 // Board: ESP32C6 Dev Module | USB CDC On Boot: Disabled | Flash 16MB
@@ -53,6 +54,7 @@
 #define RELEASE_RATIO    1.45f   // released below this (hysteresis)
 #define FULL_RATIO       4.0f    // level bar is full at floor * this
 #define HOLD_MS          800     // keep "detected" this long after the last peak
+#define RAW_EVERY        16      // raw CSI stream (run_viewer.sh): 1 packet out of N (~6/s at 100 pkt/s)
 
 #define W 128
 #define H 128
@@ -77,8 +79,36 @@ static volatile int s_rssi = 0;
 static uint8_t s_csiMac[6] = {0};
 static volatile bool s_csiMacSet = false;
 
+// Serial is written from two tasks (Wi-Fi task for raw CSI, main loop for STATE/log): one lock keeps lines whole.
+static SemaphoreHandle_t s_serMux = NULL;
+static inline bool serLock()   { return s_serMux && xSemaphoreTake(s_serMux, pdMS_TO_TICKS(30)) == pdTRUE; }
+static inline void serUnlock() { if (s_serMux) xSemaphoreGive(s_serMux); }
+
+static volatile uint32_t s_rawUntil = 0;     // raw stream is on while 'C' keep-alives arrive (3 s)
+static uint32_t s_rawSeq = 0;
+static char s_rawLine[6000];
+
+static void printRawCsi(wifi_csi_info_t *info) {   // same format as csi_recv_router / esp-csi
+  const wifi_pkt_rx_ctrl_t *rx = &info->rx_ctrl;
+  int n = snprintf(s_rawLine, sizeof(s_rawLine),
+      "CSI_DATA,%lu,%02x:%02x:%02x:%02x:%02x:%02x,%d,%d,%d,%d,%d,%d,%lu,%d,%d,%d,%d,\"[%d",
+      (unsigned long)s_rawSeq++, info->mac[0], info->mac[1], info->mac[2], info->mac[3], info->mac[4], info->mac[5],
+      rx->rssi, rx->rate, rx->noise_floor, 0, 0, rx->channel, (unsigned long)rx->timestamp, rx->sig_len,
+      rx->cur_bb_format, info->len, info->first_word_invalid, (int)info->buf[0]);
+  for (int i = 1; i < info->len && n < (int)sizeof(s_rawLine) - 8; i++)
+    n += snprintf(s_rawLine + n, sizeof(s_rawLine) - n, ",%d", (int)info->buf[i]);
+  n += snprintf(s_rawLine + n, sizeof(s_rawLine) - n, "]\"\n");
+  if (!serLock()) return;
+  if (s_rawSeq == 1)                                   // header once, right before the first row
+    Serial.print("type,seq,mac,rssi,rate,noise_floor,fft_gain,agc_gain,channel,local_timestamp,sig_len,rx_format,len,first_word,data\n");
+  Serial.write((const uint8_t *)s_rawLine, n);
+  serUnlock();
+}
+
 static void csi_cb(void *ctx, wifi_csi_info_t *info) {
   if (!info || !info->buf || !s_csiMacSet || memcmp(info->mac, s_csiMac, 6)) return;
+  static uint32_t rawTick = 0;                         // raw stream: every RAW_EVERY-th packet; the old Python tool only keeps up with a few rows/s
+  if ((int32_t)(s_rawUntil - millis()) > 0 && (rawTick++ % RAW_EVERY) == 0) printRawCsi(info);
   int n = info->len / 2;
   if (n > NSUB) n = NSUB;
   if (n < 16) return;
@@ -617,7 +647,9 @@ static void splash(const char *l1, const char *l2 = "") {
 }
 
 void setup() {
-  Serial.begin(115200);
+  s_serMux = xSemaphoreCreateMutex();
+  Serial.setTxBufferSize(8192);
+  Serial.begin(921600);
   pinMode(PIN_BTN, INPUT_PULLUP);
   pinMode(PIN_BOOT, INPUT_PULLUP);
   dht.begin();
@@ -645,6 +677,13 @@ void setup() {
 }
 
 void loop() {
+  static uint32_t loopStart = 0, loopMax = 0, loopCnt = 0;
+  { uint32_t t = millis(); if (loopStart) { uint32_t dt = t - loopStart; if (dt > loopMax) loopMax = dt; } loopStart = t; loopCnt++; }
+  while (Serial.available()) {                          // 'C' = raw CSI on, 'c' = off
+    int ch = Serial.read();
+    if (ch == 'C') { if ((int32_t)(s_rawUntil - millis()) <= 0) s_rawSeq = 0; s_rawUntil = millis() + 3000; }
+    else if (ch == 'c') s_rawUntil = 0;
+  }
   server.handleClient();
   if (netMode == NET_AP) dns.processNextRequest();
   handleButton();
@@ -667,8 +706,9 @@ void loop() {
   updateMotionState(now);
 
   static uint32_t lastDhtRead = 0;
-  if (now - lastDhtRead > 3000) {
-    lastDhtRead = now;
+  // DHT11: every 3 s; when no sensor answers, only every 20 s (a failed read blocks ~170 ms)
+  if (now - lastDhtRead > ((isnan(temp) && isnan(hum)) ? 20000u : 3000u) || lastDhtRead == 0) {
+    lastDhtRead = now ? now : 1;
     float t = dht.readTemperature(), h = dht.readHumidity();
     temp = isnan(t) ? NAN : t;
     hum = isnan(h) ? NAN : h;
@@ -689,16 +729,21 @@ void loop() {
   static uint32_t lastState = 0;
   if (now - lastState >= 100) {
     lastState = now;
-    Serial.printf("STATE,%.3f,%.3f,%d,%d,%d,%d,%d,%lu,%.4f\n", motionRatio(), motionLevel(),
-                  detected ? 1 : 0, calibrating ? 1 : 0, calLeft(), haveData() ? 1 : 0, (int)s_rssi,
-                  (unsigned long)pps, floorMotion);
+    char st[96];
+    int sl = snprintf(st, sizeof(st), "STATE,%.3f,%.3f,%d,%d,%d,%d,%d,%lu,%.4f\n", motionRatio(), motionLevel(),
+                      detected ? 1 : 0, calibrating ? 1 : 0, calLeft(), haveData() ? 1 : 0, (int)s_rssi,
+                      (unsigned long)pps, floorMotion);
+    if (serLock()) { Serial.write((const uint8_t *)st, sl); serUnlock(); }
   }
 
   static uint32_t lastLog = 0;
   if (now - lastLog > 2000) {
     lastLog = now;
-    Serial.printf("[%s] %s  ratio=%.2f pps=%lu data=%d%s\n", netMode == NET_AP ? "AP" : "STA", netIp.c_str(),
-                  motionRatio(), (unsigned long)pps, haveData(), detected ? "  MOTION" : "");
+    char lg[160];
+    int ll = snprintf(lg, sizeof(lg), "[%s] %s  ratio=%.2f pps=%lu data=%d%s  loops/2s=%lu maxloop=%lums\n", netMode == NET_AP ? "AP" : "STA", netIp.c_str(),
+                      motionRatio(), (unsigned long)pps, haveData(), detected ? "  MOTION" : "", (unsigned long)loopCnt, (unsigned long)loopMax);
+    if (serLock()) { Serial.write((const uint8_t *)lg, ll); serUnlock(); }
+    loopCnt = 0; loopMax = 0;
   }
   delay(2);
 }

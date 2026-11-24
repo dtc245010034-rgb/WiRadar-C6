@@ -37,14 +37,15 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 1. Cài core **esp32 by Espressif Systems 3.x trở lên** (có hỗ trợ ESP32-C6).
 2. Cài thư viện: *Adafruit GFX*, *Adafruit ST7735 and ST7789*, *DHT sensor library*, *Adafruit Unified Sensor*.
 3. Mở `WiRadar_C6/WiRadar_C6.ino`. Chọn board **ESP32C6 Dev Module**, *Flash Size 16MB*, *USB CDC On Boot: Disabled*.
-4. Upload. Lần đầu board mở AP `WiRadar-C6-Setup` (xem Serial 115200 hoặc màn hình để biết IP).
+4. Upload. Lần đầu board mở AP `WiRadar-C6-Setup` (xem Serial **921600** hoặc màn hình để biết IP). Mở cổng serial có thể làm board tự khởi động lại; đó là bình thường.
 
 Với `csi_recv_router/` và `csi_radar_display/`: copy `secrets.h.example` thành `secrets.h` và điền Wi-Fi của bạn (file này không được đưa lên git).
 
 ## Radar trên máy tính
 ```bash
 python3 -m venv csi-venv && ./csi-venv/bin/pip install -r viewer/requirements.txt
-./run2_viewer.sh            # cần board chạy csi_recv_router, đóng Serial Monitor trước
+./run2_viewer.sh            # radar trực quan (tự nhận WiRadar_C6 hoặc csi_recv_router); đóng Serial Monitor trước
+./run_viewer.sh             # đồ thị CSI thô của Espressif (tự bật luồng CSI_DATA trên WiRadar_C6)
 ```
 
 ## Hộp in 3D
