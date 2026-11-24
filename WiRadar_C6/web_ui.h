@@ -124,7 +124,10 @@ function ui(){
 // ---------- radar ----------
 function fit(c){const d=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;if(c.width!==Math.round(w*d)){c.width=Math.round(w*d);c.height=Math.round(h*d)}return d}
 function radar(ts){
-  const c=$('rad'),d=fit(c),g=c.getContext('2d'),W=c.width,H=c.height,cx=W/2,cy=H/2,R=Math.min(W,H)/2-6*d;
+  requestAnimationFrame(radar);
+  const c0=$('rad');if(!c0.clientWidth||!c0.clientHeight)return;
+  const c=c0,d=fit(c),g=c.getContext('2d'),W=c.width,H=c.height,cx=W/2,cy=H/2,R=Math.min(W,H)/2-6*d;
+  if(R<=0)return;
   g.clearRect(0,0,W,H);
   const det=S&&S.detect&&!S.cal&&S.data,lvl=S?S.level:0;
   const col=det?'255,74,60':'23,224,122';
@@ -149,19 +152,19 @@ function radar(ts){
     g.strokeStyle='#ffc700';g.lineWidth=2*d;g.strokeRect(cx-bw/2,cy-bh/2,bw,bh);g.fillStyle='#ffc700';g.textAlign='center';
     g.font='bold '+(R*.09)+'px system-ui';g.fillText(S.data?'CALIBRATING... '+S.calLeft+'s':'NO CSI DATA',cx,cy+R*.03);
     g.font=(R*.065)+'px system-ui';g.fillText(S.data?'keep the area clear':'waiting for packets',cx,cy+R*.15)}
-  requestAnimationFrame(radar);
 }
 
 // ---------- graph ----------
 function graph(){
-  const c=$('gr'),d=fit(c),g=c.getContext('2d'),W=c.width,H=c.height;g.clearRect(0,0,W,H);
+  setTimeout(graph,100);
+  const c0=$('gr');if(!c0.clientWidth||!c0.clientHeight)return;
+  const c=c0,d=fit(c),g=c.getContext('2d'),W=c.width,H=c.height;g.clearRect(0,0,W,H);
   const ymax=4.5,Y=r=>H-6*d-(H-12*d)*Math.max(0,Math.min(ymax,r))/ymax,now=performance.now();
   g.lineWidth=d;g.setLineDash([4*d,4*d]);g.strokeStyle='#ffc700';g.beginPath();g.moveTo(0,Y(1.8));g.lineTo(W,Y(1.8));g.stroke();
   g.setLineDash([2*d,4*d]);g.strokeStyle='#4a5f54';g.beginPath();g.moveTo(0,Y(1));g.lineTo(W,Y(1));g.stroke();g.setLineDash([]);
   g.lineWidth=2.2*d;g.lineJoin='round';
   for(let i=1;i<hist.length;i++){const x0=W-(now-hist[i-1][0])/30000*W,x1=W-(now-hist[i][0])/30000*W;
     g.strokeStyle=hist[i][1]>1.8?'#ff4a3c':'#17e07a';g.beginPath();g.moveTo(x0,Y(hist[i-1][1]));g.lineTo(x1,Y(hist[i][1]));g.stroke()}
-  setTimeout(graph,100);
 }
 requestAnimationFrame(radar);graph();poll();
 </script></body></html>)rawliteral";

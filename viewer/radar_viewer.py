@@ -2,8 +2,10 @@
 """
 Wi-Fi CSI radar viewer (PC side).
 
-Reads CSI_DATA lines from the ESP32-C6 over serial (board runs csi_recv_router.ino),
-turns them into a single "motion level" and draws it as a radar:
+Reads the ESP32-C6 over USB serial. Two firmwares are understood (baud is auto-detected):
+  * WiRadar_C6.ino      -> "STATE,..." lines at 115200 (motion level already computed on the board)
+  * csi_recv_router.ino -> raw "CSI_DATA,..." lines at 921600 (motion level computed here)
+and draws the motion level as a radar:
   - green rings + sweeping beam = idle, red rings + expanding ripples + central glow = motion
   - bar, status text and a scrolling history graph on the right.
 
@@ -37,7 +39,9 @@ class CsiEngine:
     """Reads serial in a thread, keeps the motion level."""
 
     def __init__(self, port, baud, record=None):
-        self.port, self.baud = port, baud
+        self.port, self.baud = port, baud          # baud None = auto-detect
+        self.state_mode = False
+        self.state_level, self.cal_left, self.pps_val = 0.0, CAL_SECONDS, 0
         self.record = open(record, 'a') if record else None
         self.base = None
         self.motion = 0.0
@@ -66,33 +70,95 @@ class CsiEngine:
     def stop(self):
         self._stop = True
 
+    def calibration_left(self):
+        if self.state_mode:
+            return self.cal_left
+        return max(0, CAL_SECONDS - int(time.time() - self.cal_start))
+
     def pps(self):
+        if self.state_mode:
+            return self.pps_val
         now = time.time()
         return sum(1 for t in list(self.times) if now - t <= 1.0)
 
+    def _open(self, baud):
+        s = serial.Serial()
+        s.port, s.baudrate, s.timeout = self.port, baud, 0.3
+        s.dtr = False
+        s.rts = False
+        s.open()
+        return s
+
     def _run(self):
-        try:
-            s = serial.Serial()
-            s.port, s.baudrate, s.timeout = self.port, self.baud, 0.5
-            s.dtr = False
-            s.rts = False
-            s.open()
-        except Exception as e:
-            self.error = f'Cannot open {self.port}: {e}'
-            return
-        buf = b''
+        bauds = [self.baud] if self.baud else [115200, 921600]
+        i = 0
+        while not self._stop:
+            baud = bauds[i % len(bauds)]
+            try:
+                s = self._open(baud)
+            except Exception as e:
+                self.error = f'Cannot open {self.port}: {e}'
+                time.sleep(1.0)
+                continue
+            self.error = None
+            ok = self._pump(s, probe=len(bauds) > 1)
+            try:
+                s.close()
+            except Exception:
+                pass
+            if not ok:
+                i += 1                      # nothing readable at this baud: try the next one
+
+    def _pump(self, s, probe):
+        """Read lines. Returns False if no valid line appeared within 3 s while probing."""
+        buf, seen = b'', False
+        deadline = time.time() + 3.0
         while not self._stop:
             try:
                 buf += s.read(8192)
             except Exception as e:
                 self.error = f'Serial error: {e}'
-                return
+                time.sleep(1.0)
+                return True
             while b'\n' in buf:
                 line, buf = buf.split(b'\n', 1)
-                if line.startswith(b'CSI_DATA'):
+                if line.startswith(b'STATE,') or line.startswith(b'CSI_DATA'):
+                    seen = True
+                    self.error = None
                     self._line(line.decode(errors='ignore'))
+            if len(buf) > 20000:
+                buf = buf[-2000:]
+            if probe and not seen and time.time() > deadline:
+                return False
+        return True
+
+    def _state(self, line):
+        try:
+            f = line.strip().split(',')[1:]
+            ratio, level, det, cal, cal_left, data, rssi, pps, floor = (
+                float(f[0]), float(f[1]), int(f[2]), int(f[3]), int(f[4]), int(f[5]), int(f[6]), int(f[7]), float(f[8]))
+        except (ValueError, IndexError):
+            return
+        now = time.time()
+        self.state_mode = True
+        self.floor = max(floor, 1e-6)
+        self.motion = ratio * self.floor
+        self.state_level = level
+        self.calibrating = bool(cal)
+        self.cal_left = cal_left
+        self.detected = bool(det) and not cal and bool(data)
+        self.rssi = rssi
+        self.pps_val = pps
+        if data:
+            self.last_pkt = now
+            self.pkts += 1
+        self.history.append((now, ratio))
 
     def _line(self, line):
+        if line.startswith('STATE,'):
+            self._state(line)
+            return
+        self.state_mode = False
         m = LINE_RE.match(line)
         if not m:
             return
@@ -143,6 +209,8 @@ class CsiEngine:
 
     @property
     def level(self):
+        if self.state_mode:
+            return self.state_level
         if self.calibrating:
             return 0.0
         return float(np.clip((self.motion - self.floor) / (self.floor * (FULL_RATIO - 1)), 0, 1))
@@ -256,7 +324,7 @@ class Radar(QWidget):
             p.drawEllipse(QPointF(cx, cy), gr, gr)
 
         if e.calibrating:
-            left = max(0, CAL_SECONDS - int(now - e.cal_start))
+            left = e.calibration_left()
             box = QRectF(cx - R * 0.62, cy - R * 0.2, R * 1.24, R * 0.4)
             p.setBrush(QColor(0, 0, 0, 215))
             p.setPen(QPen(QColor(255, 200, 0), 2))
@@ -294,7 +362,7 @@ class Radar(QWidget):
         if e.error or waiting:
             p.setFont(QFont('DejaVu Sans', 10))
             p.setPen(QColor(170, 180, 175))
-            msg = e.error or 'Waiting for CSI data. Is the board running csi_recv_router?\nClose Arduino Serial Monitor.'
+            msg = e.error or ('No CSI packets yet. Join the board\'s Wi-Fi with a phone, or connect it to your router.\nClose Arduino Serial Monitor.')
             p.drawText(QRectF(x, y + 76, w, 48), Qt.TextWordWrap, msg)
 
         # level bar
@@ -353,7 +421,7 @@ class Radar(QWidget):
 def main():
     ap = argparse.ArgumentParser(description='Wi-Fi CSI radar viewer')
     ap.add_argument('-p', '--port', default='/dev/ttyACM0')
-    ap.add_argument('-b', '--baud', type=int, default=921600)
+    ap.add_argument('-b', '--baud', type=int, default=None, help='default: auto-detect (115200 / 921600)')
     ap.add_argument('-r', '--record', help='append raw CSI_DATA lines to this file')
     ap.add_argument('--grab', help='(testing) save a screenshot after 12 s and exit')
     a = ap.parse_args()

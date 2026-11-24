@@ -8,6 +8,7 @@
 //        short press      next screen            (NET -> TEMP/HUM -> RADAR -> GRAPH -> NET)
 //        hold 1..5 s      recalibrate the radar  (on release)
 //        hold 5 s         start the setup Access Point again
+//  * USB serial (115200): prints STATE lines that run2_viewer.sh draws as a radar on the PC.
 //  * Test without any parts: the board alone works (the phone's link is used as the CSI source).
 //
 // Board: ESP32C6 Dev Module | USB CDC On Boot: Disabled | Flash 16MB
@@ -30,7 +31,7 @@
 // ---------------- Project ----------------
 #define PROJECT_NAME  "WiRadar-C6"
 #define AP_SSID       "WiRadar-C6-Setup"
-#define AP_PASS       "wiradar24"          // 8+ characters (WPA2)
+#define AP_PASS       "66666666"          // 8+ characters (WPA2)
 #define HOSTNAME      "wiradar"            // http://wiradar.local
 #define STA_TIMEOUT   15000                // ms to wait for the home Wi-Fi at boot
 
@@ -682,6 +683,15 @@ void loop() {
       case MODE_RADAR: sweep += 7.0f; if (sweep >= 360) sweep -= 360; drawRadar(); break;
       case MODE_GRAPH: drawGraph(); break;
     }
+  }
+
+  // Machine-readable state for the PC viewer (run2_viewer.sh), 10 lines per second
+  static uint32_t lastState = 0;
+  if (now - lastState >= 100) {
+    lastState = now;
+    Serial.printf("STATE,%.3f,%.3f,%d,%d,%d,%d,%d,%lu,%.4f\n", motionRatio(), motionLevel(),
+                  detected ? 1 : 0, calibrating ? 1 : 0, calLeft(), haveData() ? 1 : 0, (int)s_rssi,
+                  (unsigned long)pps, floorMotion);
   }
 
   static uint32_t lastLog = 0;
