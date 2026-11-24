@@ -92,11 +92,9 @@ class CsiEngine:
 
     def _run(self):
         bauds = [self.baud] if self.baud else [921600, 115200]
-        i = 0
         while not self._stop:
-            baud = bauds[i % len(bauds)]
             try:
-                s = self._open(baud)
+                s = self._open(bauds[0])
             except Exception as e:
                 self.error = f'Cannot open {self.port}: {e}'
                 time.sleep(1.0)
@@ -106,25 +104,24 @@ class CsiEngine:
                 s.write(b'c')                  # make sure the raw CSI stream is off (WiRadar_C6)
             except Exception:
                 pass
-            ok = self._pump(s, probe=len(bauds) > 1)
+            self._pump(s, bauds)
             try:
                 s.close()
             except Exception:
                 pass
-            if not ok:
-                i += 1                      # nothing readable at this baud: try the next one
 
-    def _pump(self, s, probe):
-        """Read lines. Returns False if no valid line appeared within 3 s while probing."""
-        buf, seen = b'', False
-        deadline = time.time() + 3.0
+    def _pump(self, s, bauds):
+        """Read lines. While nothing valid is seen, change baud on the SAME open port (re-opening
+        the port would reset the board)."""
+        buf, seen, idx = b'', False, 0
+        deadline = time.time() + 10.0          # a reset board needs a few seconds to boot and join Wi-Fi
         while not self._stop:
             try:
                 buf += s.read(8192)
             except Exception as e:
                 self.error = f'Serial error: {e}'
                 time.sleep(1.0)
-                return True
+                return
             while b'\n' in buf:
                 line, buf = buf.split(b'\n', 1)
                 if line.startswith(b'STATE,') or line.startswith(b'CSI_DATA'):
@@ -133,9 +130,11 @@ class CsiEngine:
                     self._line(line.decode(errors='ignore'))
             if len(buf) > 20000:
                 buf = buf[-2000:]
-            if probe and not seen and time.time() > deadline:
-                return False
-        return True
+            if not seen and len(bauds) > 1 and time.time() > deadline:
+                idx = (idx + 1) % len(bauds)
+                s.baudrate = bauds[idx]
+                buf = b''
+                deadline = time.time() + 6.0
 
     def _state(self, line):
         try:
@@ -374,7 +373,7 @@ class Radar(QWidget):
             p.drawText(QRectF(x, y + 76, w, 48), Qt.TextWordWrap, msg)
 
         # level bar
-        by = y + 130
+        by = y + 150
         p.setFont(QFont('DejaVu Sans', 11, QFont.Bold))
         p.setPen(QColor(120, 140, 130))
         p.drawText(QRectF(x, by - 26, w, 22), Qt.AlignLeft | Qt.AlignVCenter, 'MOTION LEVEL')
