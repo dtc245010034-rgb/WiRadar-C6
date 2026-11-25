@@ -22,12 +22,12 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .dim{color:var(--mute);font-size:13px;margin:10px 0 0}
 </style></head><body><div class="wrap">
 <h1>Enclosure 3D preview</h1>
-<p class="sub">Drag to rotate, scroll to zoom. Ghost parts show where the display, ESP32 board, DHT11 and button sit.</p>
+<p class="sub">Landscape case, slot-in parts. Drag to rotate, scroll to zoom. Ghost parts: display (green, slides in from the left slot), ESP32-C6 (dark green, USB at the right), DHT11 (blue, vents in the front), button (red, top).</p>
 <div class="grid">
  <div class="card"><div id="view" role="img" aria-label="3D view of the enclosure"></div></div>
  <div class="card">
   <h2>View</h2>
-  <div class="row"><button id="vf">Front</button><button id="vb">Back</button><button id="vs">Side</button><button id="vi">Iso</button></div>
+  <div class="row"><button id="vf">Front</button><button id="vb">Back</button><button id="vs">Side</button><button id="vt">Top</button><button id="vi">Iso</button></div>
   <div class="ctl"><label for="ex">Explode <output id="exo">0</output></label><input id="ex" type="range" min="0" max="100" value="0"></div>
   <div class="ctl"><label for="op">Body opacity <output id="opo">35%</output></label><input id="op" type="range" min="10" max="100" value="35"></div>
   <label class="chk"><input type="checkbox" id="cCover" checked> <span class="sw" style="background:#8b9bb4"></span>Cover</label>
@@ -68,14 +68,15 @@ const d = DATA.dims, c = new THREE.Vector3(0, 0, d.D / 2);
 document.getElementById('dims').textContent = `Outer size: ${d.OW.toFixed(1)} × ${d.OH.toFixed(1)} × ${d.D.toFixed(1)} mm (W × H × D)`;
 
 function view(p){ cam.position.set(c.x+p[0], c.y+p[1], c.z+p[2]); ctl.target.copy(c); ctl.update(); }
-const V = {vf:[0,0,-170], vb:[0,0,170], vs:[170,0,0], vi:[-110,80,-130]};
+const K = Math.max(d.OW, d.OH, d.D) * 1.9;
+const V = {vf:[0,0,-K], vb:[0,0,K], vs:[K,0,0], vt:[0,K,-K*0.15], vi:[-K*0.55,K*0.45,-K*0.75]};
 for (const k in V) document.getElementById(k).onclick = () => view(V[k]);
 view(V.vi);
 
 function apply(){
   const e = +document.getElementById('ex').value; document.getElementById('exo').textContent = e;
   const dz = e * 0.5;
-  cover.position.z = dz; parts.esp32.position.z = dz;
+  cover.position.z = dz;
   body.material.opacity = document.getElementById('op').value/100;
   document.getElementById('opo').textContent = document.getElementById('op').value + '%';
   cover.visible = document.getElementById('cCover').checked;

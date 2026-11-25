@@ -225,7 +225,7 @@ void setup() {
   SPI.begin(PIN_SCK, -1, PIN_MOSI, -1);
   tft.initR(TFT_TAB);
   tft.setSPISpeed(27000000);
-  tft.setRotation(0);
+  tft.setRotation(TFT_ROTATION);
   tft.fillScreen(ST77XX_BLACK);
   splash("Starting...");
   Serial.println("\\n=== " PROJECT_NAME " ===");

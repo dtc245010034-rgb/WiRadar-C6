@@ -33,7 +33,7 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 | `run2_viewer.sh`, `run_viewer.sh` | Chạy cửa sổ radar / đồ thị CSI thô trên máy tính |
 | `viewer/` | Cửa sổ radar trên máy tính (`radar_viewer.py`) và công cụ vẽ CSI của Espressif |
 | `demo/preview.html` | Xem trước giao diện màn hình 128x128 khi chưa có phần cứng |
-| `case/` | Hộp in 3D tham số hoá (`make_case.py`, STL, xem 3D `viewer.html`) |
+| `case/` | Hộp in 3D **nằm ngang, lắp bằng khe** (`make_case.py`, STL, miếng thử, xem 3D `viewer.html`) |
 | `docs/WIRING.md` | Sơ đồ nối dây |
 | `docs/ARCHITECTURE.md` | **Sơ đồ hệ thống** (bản đầy đủ, bản Lite, thao tác nút) và các giao thức dùng |
 
@@ -55,7 +55,7 @@ python3 -m venv csi-venv && ./csi-venv/bin/pip install -r viewer/requirements.tx
 ```
 
 ## Hộp in 3D
-Đo linh kiện, sửa số trong `case/make_case.py`, chạy lại để xuất `case/out/body.stl` và `cover.stl`. Mở `case/viewer.html` để xem 3D.
+Xem `case/README.md`: hộp nằm ngang 112.7 × 42.4 × 36.4 mm, màn hình, DHT11, board và nút đều lắp bằng khe (chỉ 4 vít ngoài nắp). In các miếng thử `out/fit_*.stl` trước. Mở `case/viewer.html` để xem 3D.
 
 ## Ghi công
 - `viewer/csi_data_read_parse.py`, `viewer/csi_viewer.html`: từ [espressif/esp-csi](https://github.com/espressif/esp-csi) (Apache-2.0).

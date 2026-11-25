@@ -1,4 +1,4 @@
-// WiRadar-C6  -  Wi-Fi CSI motion detection on ESP32-C6
+  // WiRadar-C6  -  Wi-Fi CSI motion detection on ESP32-C6
 // ---------------------------------------------------------------------------
 //  * Boot: join the saved Wi-Fi; if none (or it fails) open the setup Access Point
 //          "WiRadar-C6-Setup" (password: see AP_PASS). A phone joins it and picks the home Wi-Fi.
@@ -48,6 +48,7 @@
 #define PIN_BTN   2      // external button to GND
 #define PIN_BOOT  9      // on-board BOOT button (handy for testing)
 #define TFT_TAB   INITR_144GREENTAB        // try INITR_BLACKTAB if the picture is shifted
+#define TFT_ROTATION 3                     // module lies on its side in the landscape case (header on the right): 3. Upright: 0. If the picture is turned the wrong way try 1 (or 2)
 
 // ---------------- Radar tuning ----------------
 #define SEND_FREQUENCY   100     // pings per second toward the CSI source
@@ -754,7 +755,7 @@ void setup() {
   SPI.begin(PIN_SCK, -1, PIN_MOSI, -1);
   tft.initR(TFT_TAB);
   tft.setSPISpeed(27000000);
-  tft.setRotation(0);
+  tft.setRotation(TFT_ROTATION);
   tft.fillScreen(ST77XX_BLACK);
   splash("Starting...");
   Serial.println("\n=== " PROJECT_NAME " ===");

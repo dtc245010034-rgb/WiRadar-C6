@@ -31,6 +31,10 @@
       box-shadow:0 3px 0 #0b0f14;transition:transform .05s, box-shadow .05s;touch-action:manipulation}
   #hw.down{transform:translateY(3px);box-shadow:0 0 0 #0b0f14;background:#30363d}
   .hint{font-size:12px;color:#c8e6d9}
+  .board.land{display:grid;grid-template-columns:auto auto;column-gap:8px;justify-content:center}
+  .board.land .bezel{grid-column:1;grid-row:1}
+  .board.land .pins{grid-column:2;grid-row:1;flex-direction:column;justify-content:space-between;align-items:center;margin:0;padding:10px 0}
+  .board.land .btnrow{grid-column:1 / span 2}
 
   h2{font-size:14px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
   .ctl{margin-bottom:16px}
@@ -65,6 +69,7 @@
 
     <div class="card">
       <h2>Controls</h2>
+      <label style="display:flex;gap:8px;align-items:center;margin:0 0 14px;font-size:14px"><input type="checkbox" id="land"> Landscape case: module on its side, header on the right (firmware TFT_ROTATION 3)</label>
       <div class="row" style="margin-bottom:16px">
         <button class="act" id="modeBtn">Switch mode</button>
         <button class="act sec" id="recalBtn">Recalibrate</button>
@@ -299,6 +304,7 @@
   hw.addEventListener('keydown', e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) down(e); });
   hw.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') up(); });
 
+  $('land').onchange = e => document.querySelector('.board').classList.toggle('land', e.target.checked);
   setMode('dht');
   requestAnimationFrame(frame);
 })();
