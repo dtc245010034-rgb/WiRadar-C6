@@ -7,9 +7,11 @@
 //  * Button (GPIO2, or the BOOT button GPIO9 for testing):
 //        short press      next screen            (NET -> TEMP/HUM -> RADAR -> GRAPH -> NET)
 //        hold 1..5 s      recalibrate the radar  (on release)
-//        hold 5 s         start the setup Access Point again
+//        hold 5..10 s     start the setup Access Point again (on release)
+//        hold 10 s+       switch Wi-Fi 4 (11n) <-> Wi-Fi 6 (11ax) mode, reconnects (on release)
 //  * USB serial (921600): prints STATE lines that run2_viewer.sh draws as a radar on the PC.
 //    Send 'C' (repeat every second) to also stream raw CSI_DATA lines (run_viewer.sh does this), 'c' to stop.
+//    Send '4' or '6' to select the Wi-Fi 4 / Wi-Fi 6 mode from the laptop.
 //  * Test without any parts: the board alone works (the phone's link is used as the CSI source).
 //
 // Board: ESP32C6 Dev Module | USB CDC On Boot: Disabled | Flash 16MB
@@ -69,9 +71,13 @@ Preferences prefs;
 // =====================================================================================
 //  CSI -> motion level
 // =====================================================================================
-#define NSUB 64
-static float s_base[NSUB];
+#define NSUB 256                      // HE20 CSI has up to 245 sub-carriers; HT20 has fewer
+struct BaseSlot { int n; bool init; float b[NSUB]; };
+static BaseSlot s_slots[3];           // one baseline per CSI length (legacy / HT / HE frames differ)
+static float s_a[NSUB];
 static volatile bool s_baseInit = false;
+static volatile uint32_t s_fmtHE = 0, s_fmtHT = 0, s_fmtLEG = 0;   // frames by 802.11 format
+static volatile int s_csiLen = 0;
 static volatile float s_motion = 0;
 static volatile uint32_t s_pkts = 0;
 static volatile uint32_t s_lastPktMs = 0;
@@ -109,37 +115,50 @@ static void csi_cb(void *ctx, wifi_csi_info_t *info) {
   if (!info || !info->buf || !s_csiMacSet || memcmp(info->mac, s_csiMac, 6)) return;
   static uint32_t rawTick = 0;                         // raw stream: every RAW_EVERY-th packet; the old Python tool only keeps up with a few rows/s
   if ((int32_t)(s_rawUntil - millis()) > 0 && (rawTick++ % RAW_EVERY) == 0) printRawCsi(info);
+  int fmt = info->rx_ctrl.cur_bb_format;               // 0/1 legacy, 2 HT (Wi-Fi 4), 4..7 HE (Wi-Fi 6)
+  if (fmt >= 4 && fmt <= 7) s_fmtHE++; else if (fmt == 2) s_fmtHT++; else s_fmtLEG++;
+  s_csiLen = info->len;
+
   int n = info->len / 2;
   if (n > NSUB) n = NSUB;
   if (n < 16) return;
 
-  float a[NSUB], sum = 0;
+  float sum = 0;
   for (int i = 0; i < n; i++) {
     int re = info->buf[2 * i + 1], im = info->buf[2 * i];
-    a[i] = sqrtf((float)(re * re + im * im));
-    sum += a[i];
+    s_a[i] = sqrtf((float)(re * re + im * im));
+    sum += s_a[i];
   }
   if (sum <= 0) return;
   float mean = sum / n;
-  for (int i = 0; i < n; i++) a[i] /= mean;          // removes AGC gain changes
+  for (int i = 0; i < n; i++) s_a[i] /= mean;        // removes AGC gain changes
 
   s_rssi = info->rx_ctrl.rssi;
   s_lastPktMs = millis();
   s_pkts++;
-  if (!s_baseInit) {
-    for (int i = 0; i < n; i++) s_base[i] = a[i];
+
+  BaseSlot *sl = NULL;                                // baseline for this CSI length
+  for (auto &x : s_slots) if (x.n == n) { sl = &x; break; }
+  if (!sl) {
+    for (auto &x : s_slots) if (x.n == 0) { sl = &x; break; }
+    if (!sl) sl = &s_slots[0];
+    sl->n = n; sl->init = false;
+  }
+  if (!sl->init) {
+    for (int i = 0; i < n; i++) sl->b[i] = s_a[i];
+    sl->init = true;
     s_baseInit = true;
     return;
   }
   float d = 0; int used = 0;
   for (int i = 0; i < n; i++) {
-    if (a[i] < 0.05f && s_base[i] < 0.05f) continue;
-    d += fabsf(a[i] - s_base[i]);
+    if (s_a[i] < 0.05f && sl->b[i] < 0.05f) continue;
+    d += fabsf(s_a[i] - sl->b[i]);
     used++;
   }
   if (!used) return;
   d /= used;
-  for (int i = 0; i < n; i++) s_base[i] += 0.003f * (a[i] - s_base[i]);
+  for (int i = 0; i < n; i++) sl->b[i] += 0.003f * (s_a[i] - sl->b[i]);
   s_motion = 0.95f * s_motion + 0.05f * d;
 }
 
@@ -150,6 +169,7 @@ static void csiEnable() {
   cfg.acquire_csi_legacy = true;
   cfg.acquire_csi_ht20 = true;
   cfg.acquire_csi_ht40 = true;
+  cfg.acquire_csi_su = true;                 // HE-LTF of HE SU frames (Wi-Fi 6)
   cfg.acquire_csi_he_stbc = 2;
   esp_wifi_set_csi_config(&cfg);
   esp_wifi_set_csi_rx_cb(csi_cb, NULL);
@@ -188,6 +208,7 @@ static uint32_t detectUntil = 0;
 static float histo[HIST_N];
 static int histN = 0;
 static uint32_t lastHist = 0, lastPps = 0, lastPktsCnt = 0, pps = 0;
+static uint32_t lastHE = 0, lastHT = 0, lastLEG = 0, fmtHEs = 0, fmtHTs = 0, fmtLEGs = 0;   // frames per second by format
 
 static bool haveData() { return s_pkts > 0 && (millis() - s_lastPktMs) < 1500; }
 static float motionRatio() { return calibrating ? 1.0f : (float)s_motion / floorMotion; }
@@ -203,6 +224,7 @@ static int calLeft() {
 static void startCalibration() {
   calibrating = true; calStart = millis(); calSum = 0; calN = 0;
   s_baseInit = false; histN = 0; detected = false;
+  for (auto &x : s_slots) { x.n = 0; x.init = false; }
 }
 
 static void updateMotionState(uint32_t now) {
@@ -228,8 +250,47 @@ static void updateMotionState(uint32_t now) {
     if (histN < HIST_N) histo[histN++] = motionRatio();
     else { memmove(histo, histo + 1, (HIST_N - 1) * sizeof(float)); histo[HIST_N - 1] = motionRatio(); }
   }
-  if (now - lastPps >= 1000) { lastPps = now; pps = s_pkts - lastPktsCnt; lastPktsCnt = s_pkts; }
+  if (now - lastPps >= 1000) {
+    lastPps = now; pps = s_pkts - lastPktsCnt; lastPktsCnt = s_pkts;
+    fmtHEs = s_fmtHE - lastHE; fmtHTs = s_fmtHT - lastHT; fmtLEGs = s_fmtLEG - lastLEG;
+    lastHE = s_fmtHE; lastHT = s_fmtHT; lastLEG = s_fmtLEG;
+  }
 }
+
+// ==== WIFI-MODE-BEGIN ===============================================================
+//  Wi-Fi 4 / Wi-Fi 6 link mode: which 802.11 standards THIS board offers when it connects.
+//  The router/AP is never changed: the link only reaches 802.11ax if both sides support it.
+static bool wifi6 = true;                              // true: 11b/g/n/ax   false: 11b/g/n only
+static uint8_t wifiProto() { return WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | (wifi6 ? WIFI_PROTOCOL_11AX : 0); }
+static void loadWifiMode() { Preferences pf; pf.begin("wiradar", true);  wifi6 = pf.getBool("w6", true); pf.end(); }
+static void saveWifiMode() { Preferences pf; pf.begin("wiradar", false); pf.putBool("w6", wifi6);        pf.end(); }
+static volatile int pendingWifi = 0;                   // 4 or 6: switch requested (button, web or serial), done in loop()
+
+// standard actually in use: 0 none, 1 = 11b, 2 = 11g, 3 = 11n (Wi-Fi 4), 4 = 11ax (Wi-Fi 6)
+static int linkStandard() {
+  wifi_phy_mode_t m;
+  if (esp_wifi_sta_get_negotiated_phymode(&m) == ESP_OK) {          // station side: what was negotiated
+    switch (m) {
+      case WIFI_PHY_MODE_HE20: return 4;
+      case WIFI_PHY_MODE_HT20: case WIFI_PHY_MODE_HT40: case WIFI_PHY_MODE_VHT20: return 3;
+      case WIFI_PHY_MODE_11G: case WIFI_PHY_MODE_11A: return 2;
+      case WIFI_PHY_MODE_11B: return 1;
+      default: break;
+    }
+  }
+  if (fmtHEs) return 4;                                              // AP side: judge by received frames
+  if (fmtHTs) return 3;
+  if (fmtLEGs) return 2;
+  return 0;
+}
+static const char *stdName(int s) {
+  switch (s) { case 4: return "Wi-Fi 6 (802.11ax)"; case 3: return "Wi-Fi 4 (802.11n)"; case 2: return "802.11g (legacy)"; case 1: return "802.11b (legacy)"; default: return "no link"; }
+}
+static const char *stdTft(int s) {
+  switch (s) { case 4: return "Wi-Fi 6 (11ax)"; case 3: return "Wi-Fi 4 (11n)"; case 2: return "11g (legacy)"; case 1: return "11b (legacy)"; default: return "no link"; }
+}
+static const char *stdTag(int s) { return s == 4 ? "W6" : (s == 3 ? "W4" : "--"); }
+// ==== WIFI-MODE-END =================================================================
 
 // =====================================================================================
 //  Network: saved credentials, STA, setup AP, web server
@@ -293,6 +354,7 @@ static bool startSTA(const String &ssid, const String &pass) {
   stopServices();
   WiFi.disconnect(true, true);
   WiFi.mode(WIFI_STA);
+  esp_wifi_set_protocol(WIFI_IF_STA, wifiProto());      // Wi-Fi 4 or Wi-Fi 6 mode
   WiFi.setSleep(false);
   WiFi.setHostname(HOSTNAME);
   WiFi.begin(ssid.c_str(), pass.c_str());
@@ -317,6 +379,8 @@ static void startAP() {
   stopServices();
   WiFi.disconnect(true, true);
   WiFi.mode(WIFI_AP_STA);
+  esp_wifi_set_protocol(WIFI_IF_AP, wifiProto());       // the setup AP offers the same standards
+  esp_wifi_set_protocol(WIFI_IF_STA, wifiProto());
   WiFi.softAP(AP_SSID, AP_PASS, 1, 0, 4);
   delay(300);
   netMode = NET_AP;
@@ -353,6 +417,13 @@ static void handleState() {
   sendJsonNum(o, "level", motionLevel(), 3);
   sendJsonNum(o, "temp", temp, 1);
   sendJsonNum(o, "hum", hum, 0);
+  o += "\"std\":"; o += linkStandard(); o += ',';
+  o += "\"stdName\":\""; o += stdName(linkStandard()); o += "\",";
+  o += "\"w6\":"; o += (wifi6 ? "true" : "false"); o += ',';
+  o += "\"he\":"; o += (unsigned long)fmtHEs; o += ',';
+  o += "\"ht\":"; o += (unsigned long)fmtHTs; o += ',';
+  o += "\"leg\":"; o += (unsigned long)fmtLEGs; o += ',';
+  o += "\"csiLen\":"; o += (int)s_csiLen; o += ',';
   o += "\"rssi\":"; o += (int)s_rssi; o += ',';
   o += "\"pps\":"; o += (unsigned long)pps; o += ',';
   o += "\"up\":"; o += (unsigned long)(millis() / 1000);
@@ -404,6 +475,11 @@ static void startServer() {
   server.on("/api/scan", HTTP_GET, handleScan);
   server.on("/api/save", HTTP_POST, handleSave);
   server.on("/api/recal", HTTP_POST, []() { startCalibration(); server.send(200, "text/plain", "ok"); });
+  server.on("/api/wifimode", HTTP_POST, []() {            // m=4 or m=6; done in loop() after the reply
+    String m = server.arg("m");
+    if (m == "4" || m == "6") { server.send(200, "application/json", "{\"ok\":true}"); pendingWifi = (m == "6") ? 6 : 4; }
+    else server.send(400, "application/json", "{\"ok\":false}");
+  });
   server.on("/api/forget", HTTP_POST, []() { clearCreds(); server.send(200, "text/plain", "ok"); });
   server.onNotFound([]() {
     if (netMode == NET_AP) handleCaptive();              // generate_204, hotspot-detect.html, ...
@@ -431,16 +507,17 @@ static const uint16_t COL_BG = C(0, 0, 0), COL_GRID = C(0, 70, 30), COL_GREEN = 
 static bool btnDown = false; static uint32_t btnT = 0;
 
 static void push() {
-  if (btnDown && millis() - btnT > 1200) {               // hold overlay: progress to Wi-Fi setup
+  if (btnDown && millis() - btnT > 1000) {               // held: show what releasing now will do
     uint32_t held = millis() - btnT;
-    int left = (int)((5000 - min<uint32_t>(held, 5000) + 999) / 1000);
-    canvas.fillRect(4, 92, 120, 32, COL_BG);
-    canvas.drawRect(4, 92, 120, 32, COL_YEL);
-    canvas.setTextSize(1); canvas.setTextColor(COL_YEL);
-    canvas.setCursor(9, 96);  canvas.print("Release: recalibrate");
-    canvas.setCursor(9, 106); canvas.printf("Keep holding: setup %ds", left);
+    const char *act = held >= 10000 ? (wifi6 ? "Release: Wi-Fi 4" : "Release: Wi-Fi 6")
+                    : held >= 5000  ? "Release: setup AP" : "Release: recalibrate";
+    canvas.fillRect(4, 90, 120, 36, COL_BG);
+    canvas.drawRect(4, 90, 120, 36, COL_YEL);
+    canvas.setTextSize(1);
+    canvas.setTextColor(COL_YEL);  canvas.setCursor(9, 95);  canvas.print(act);
+    canvas.setTextColor(COL_GRAY); canvas.setCursor(9, 105); canvas.print("5s:AP 10s:W4/6");
     canvas.drawRect(9, 116, 110, 5, COL_GRAY);
-    canvas.fillRect(10, 117, (int)(108UL * min<uint32_t>(held, 5000) / 5000), 3, COL_YEL);
+    canvas.fillRect(10, 117, (int)(108UL * min<uint32_t>(held, 10000) / 10000), 3, held >= 10000 ? COL_GREEN : COL_YEL);
   }
   tft.drawRGBBitmap(0, 0, canvas.getBuffer(), W, H);
 }
@@ -471,6 +548,7 @@ static void drawNet() {
     fitPrint(4, 72, COL_GRAY, "2) Open in browser:", 21);
     fitPrint(4, 82, COL_YEL, String("http://") + netIp, 21);
     fitPrint(4, 96, COL_GRAY, String("Phones joined: ") + WiFi.softAPgetStationNum(), 21);
+    fitPrint(4, 107, COL_GRAY, String("Offers Wi-Fi ") + (wifi6 ? "6 (11ax)" : "4 (11n)"), 21);
   } else {
     canvas.setTextColor(COL_GREEN); canvas.setCursor(4, 18); canvas.print("ONLINE");
     canvas.setTextSize(1);
@@ -479,9 +557,11 @@ static void drawNet() {
     fitPrint(4, 62, COL_GRAY, "IP address:", 21);
     fitPrint(4, 72, COL_YEL, netIp, 21);
     fitPrint(4, 86, COL_GRAY, "or http://wiradar.local", 21);
-    fitPrint(4, 98, COL_GRAY, String("Signal ") + WiFi.RSSI() + " dBm", 21);
+    fitPrint(4, 97, COL_GRAY, String(WiFi.RSSI()) + " dBm  offer W" + (wifi6 ? "6" : "4"), 21);
+    int ls = linkStandard();
+    fitPrint(4, 108, ls == 4 ? COL_GREEN : COL_YEL, String("Link: ") + stdTft(ls), 21);
   }
-  fitPrint(4, 119, COL_GRAY, "Hold 5s: Wi-Fi setup", 21);
+  fitPrint(4, 119, COL_GRAY, "5s:AP  10s:Wi-Fi 4/6", 21);
   push();
 }
 
@@ -519,6 +599,7 @@ static void drawRadar() {
 
   header("WI-FI RADAR");
   canvas.setTextColor(COL_GREEN); canvas.setCursor(4, 3); canvas.print("WI-FI RADAR");
+  canvas.setTextColor(linkStandard() == 4 ? COL_GREEN : COL_YEL); canvas.setCursor(74, 3); canvas.print(stdTag(linkStandard()));
   canvas.setTextColor(COL_GRAY); canvas.setCursor(W - 40, 3); canvas.printf("%lu/s", (unsigned long)pps);
 
   canvas.drawCircle(cx, cy, R, ring);
@@ -580,6 +661,7 @@ static void drawGraph() {
   bool data = haveData();
   bool det = detected && !calibrating && data;
   header("MOTION GRAPH 30s");
+  canvas.setTextColor(linkStandard() == 4 ? COL_GREEN : COL_YEL); canvas.setCursor(104, 3); canvas.print(stdTag(linkStandard()));
   canvas.setTextSize(2); canvas.setCursor(4, 19);
   if (!data)            { canvas.setTextColor(COL_YEL);   canvas.print("NO DATA"); }
   else if (calibrating) { canvas.setTextColor(COL_YEL);   canvas.print("CALIB."); }
@@ -608,7 +690,7 @@ static void drawGraph() {
 // =====================================================================================
 //  Button
 // =====================================================================================
-static uint32_t btnEdge = 0; static bool apFired = false;
+static uint32_t btnEdge = 0;
 static bool readBtn() { return digitalRead(PIN_BTN) == LOW || digitalRead(PIN_BOOT) == LOW; }
 
 static void nextMode() {
@@ -620,16 +702,17 @@ static void nextMode() {
   }
 }
 
-static void handleButton() {
+static void handleButton() {                             // actions happen on release (overlay shows which)
   bool d = readBtn();
   uint32_t now = millis();
-  if (d && !btnDown && now - btnEdge > 40) { btnDown = true; btnT = now; btnEdge = now; apFired = false; }
-  else if (d && btnDown) {
-    if (!apFired && now - btnT >= 5000) { apFired = true; requestAP = true; }
-  } else if (!d && btnDown && now - btnEdge > 40) {
+  if (d && !btnDown && now - btnEdge > 40) { btnDown = true; btnT = now; btnEdge = now; }
+  else if (!d && btnDown && now - btnEdge > 40) {
     btnDown = false; btnEdge = now;
     uint32_t held = now - btnT;
-    if (!apFired) { if (held >= 1000) startCalibration(); else nextMode(); }
+    if (held >= 10000)      pendingWifi = wifi6 ? 4 : 6;  // switch Wi-Fi 4 <-> Wi-Fi 6
+    else if (held >= 5000)  requestAP = true;             // setup Access Point again
+    else if (held >= 1000)  startCalibration();           // recalibrate radar
+    else                    nextMode();                   // next screen
   }
 }
 
@@ -644,6 +727,20 @@ static void splash(const char *l1, const char *l2 = "") {
   canvas.setCursor(10, 56); canvas.print(l1);
   canvas.setCursor(10, 68); canvas.print(l2);
   tft.drawRGBBitmap(0, 0, canvas.getBuffer(), W, H);
+}
+
+static void applyWifiMode(int wm) {                      // 4 or 6; no-op if already in that mode
+  bool six = (wm == 6);
+  if (six == wifi6) return;
+  wifi6 = six;
+  saveWifiMode();
+  Serial.printf("[wifi] mode -> %s\n", wifi6 ? "Wi-Fi 6 (11b/g/n/ax)" : "Wi-Fi 4 (11b/g/n)");
+  splash("Switching to", wifi6 ? "Wi-Fi 6 (11ax)..." : "Wi-Fi 4 (11n)...");
+  bool ok = true;
+  if (netMode == NET_AP) startAP();
+  else if (savedSsid.length()) ok = startSTA(savedSsid, savedPass);
+  if (!ok) startAP();                                    // could not rejoin: open the setup AP
+  mode = MODE_NET;
 }
 
 void setup() {
@@ -664,6 +761,7 @@ void setup() {
 
   WiFi.onEvent(onWiFiEvent);
   loadCreds();
+  loadWifiMode();
   bool ok = false;
   if (savedSsid.length()) {
     splash("Connecting to", savedSsid.substring(0, 20).c_str());
@@ -683,12 +781,15 @@ void loop() {
     int ch = Serial.read();
     if (ch == 'C') { if ((int32_t)(s_rawUntil - millis()) <= 0) s_rawSeq = 0; s_rawUntil = millis() + 3000; }
     else if (ch == 'c') s_rawUntil = 0;
+    else if (ch == '4') pendingWifi = 4;                 // laptop: Wi-Fi 4 mode
+    else if (ch == '6') pendingWifi = 6;                 // laptop: Wi-Fi 6 mode
   }
   server.handleClient();
   if (netMode == NET_AP) dns.processNextRequest();
   handleButton();
   uint32_t now = millis();
 
+  if (pendingWifi) { int w = pendingWifi; pendingWifi = 0; applyWifiMode(w); }
   if (requestAP) {                                       // 5 s hold: recreate the Access Point
     requestAP = false;
     splash("Starting setup", "Access Point...");
@@ -729,10 +830,11 @@ void loop() {
   static uint32_t lastState = 0;
   if (now - lastState >= 100) {
     lastState = now;
-    char st[96];
-    int sl = snprintf(st, sizeof(st), "STATE,%.3f,%.3f,%d,%d,%d,%d,%d,%lu,%.4f\n", motionRatio(), motionLevel(),
+    char st[160];
+    int sl = snprintf(st, sizeof(st), "STATE,%.3f,%.3f,%d,%d,%d,%d,%d,%lu,%.4f,%d,%d,%lu,%lu,%lu,%d\n", motionRatio(), motionLevel(),
                       detected ? 1 : 0, calibrating ? 1 : 0, calLeft(), haveData() ? 1 : 0, (int)s_rssi,
-                      (unsigned long)pps, floorMotion);
+                      (unsigned long)pps, floorMotion, linkStandard(), wifi6 ? 1 : 0,
+                      (unsigned long)fmtHEs, (unsigned long)fmtHTs, (unsigned long)fmtLEGs, (int)s_csiLen);
     if (serLock()) { Serial.write((const uint8_t *)st, sl); serUnlock(); }
   }
 

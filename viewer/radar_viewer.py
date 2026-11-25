@@ -13,7 +13,7 @@ The motion algorithm is the same as the one running on the board (WiRadar_C6.ino
   per packet: amplitude of each subcarrier, normalised by its mean (removes AGC gain),
   compared with a slowly adapting baseline, then smoothed.
 
-Keys: R = recalibrate | F = fullscreen | Esc/Q = quit
+Keys: R = recalibrate | 4 / 6 = Wi-Fi 4 / Wi-Fi 6 mode on the board | F = fullscreen | Esc/Q = quit
 Note: the ripples show how strong the motion is, NOT where it is. One board + one router tells you
 THAT something moved and how strongly, not WHERE.
 """
@@ -38,7 +38,10 @@ LINE_RE = re.compile(r'^CSI_DATA,(\d+),([0-9a-fA-F:]+),(-?\d+),.*?,"\[(.*)\]"')
 class CsiEngine:
     """Reads serial in a thread, keeps the motion level."""
 
-    def __init__(self, port, baud, record=None):
+    def __init__(self, port, baud, record=None, want_wifi=None):
+        self.want_wifi = want_wifi                 # 4 / 6: keep asking the board until it reports this mode
+        self.ser = None
+        self.std, self.w6, self.he, self.ht, self.leg, self.csi_len = 0, None, 0, 0, 0, 0
         self.port, self.baud = port, baud          # baud None = auto-detect
         self.state_mode = False
         self.last_state = 0.0
@@ -67,6 +70,13 @@ class CsiEngine:
         self.cal_start = time.time()
         self.cal_sum, self.cal_n = 0.0, 0
         self.detected = False
+
+    def send(self, data):
+        try:
+            if self.ser is not None and self.ser.is_open:
+                self.ser.write(data)
+        except Exception:
+            pass
 
     def stop(self):
         self._stop = True
@@ -100,6 +110,7 @@ class CsiEngine:
                 time.sleep(1.0)
                 continue
             self.error = None
+            self.ser = s
             try:
                 s.write(b'c')                  # make sure the raw CSI stream is off (WiRadar_C6)
             except Exception:
@@ -128,6 +139,7 @@ class CsiEngine:
                     seen = True
                     self.error = None
                     self._line(line.decode(errors='ignore'))
+                    self._ensure_wifi()
             if len(buf) > 20000:
                 buf = buf[-2000:]
             if not seen and len(bauds) > 1 and time.time() > deadline:
@@ -136,6 +148,12 @@ class CsiEngine:
                 buf = b''
                 deadline = time.time() + 6.0
 
+    def _ensure_wifi(self):
+        if self.want_wifi in (4, 6) and self.w6 is not None and self.w6 != (self.want_wifi == 6):
+            if time.time() - getattr(self, '_wifi_asked', 0) > 4.0:      # a switch reconnects: do not spam
+                self._wifi_asked = time.time()
+                self.send(b'6' if self.want_wifi == 6 else b'4')
+
     def _state(self, line):
         try:
             f = line.strip().split(',')[1:]
@@ -143,6 +161,11 @@ class CsiEngine:
                 float(f[0]), float(f[1]), int(f[2]), int(f[3]), int(f[4]), int(f[5]), int(f[6]), int(f[7]), float(f[8]))
         except (ValueError, IndexError):
             return
+        try:                                          # Wi-Fi standard fields (newer firmware)
+            self.std, self.w6 = int(f[9]), bool(int(f[10]))
+            self.he, self.ht, self.leg, self.csi_len = int(f[11]), int(f[12]), int(f[13]), int(f[14])
+        except (ValueError, IndexError):
+            pass
         now = time.time()
         self.state_mode = True
         self.last_state = now
@@ -231,7 +254,7 @@ class Radar(QWidget):
         self.ripples = []
         self.last_blip = 0.0
         self.setWindowTitle('Wi-Fi CSI Radar')
-        self.resize(1100, 640)
+        self.resize(1100, 720)
         self.setMinimumSize(760, 460)
         self.setFocusPolicy(Qt.StrongFocus)
         self.t = QTimer(self)
@@ -242,6 +265,10 @@ class Radar(QWidget):
         k = e.key()
         if k == Qt.Key_R:
             self.eng.recalibrate()
+        elif k == Qt.Key_4:
+            self.eng.send(b'4')
+        elif k == Qt.Key_6:
+            self.eng.send(b'6')
         elif k == Qt.Key_F:
             self.showNormal() if self.isFullScreen() else self.showFullScreen()
         elif k in (Qt.Key_Escape, Qt.Key_Q):
@@ -390,7 +417,7 @@ class Radar(QWidget):
         p.drawLine(QPointF(x + 2 + (w - 4) * thr, by - 3), QPointF(x + 2 + (w - 4) * thr, by + 25))
 
         # history graph (motion / floor)
-        gy, gh = by + 70, h - (by - y) - 150
+        gy, gh = by + 70, h - (by - y) - 270
         gh = max(gh, 120)
         p.setFont(QFont('DejaVu Sans', 11, QFont.Bold))
         p.setPen(QColor(120, 140, 130))
@@ -422,7 +449,29 @@ class Radar(QWidget):
         p.setPen(QColor(150, 165, 158))
         p.drawText(QRectF(x, ny, w, 22), Qt.AlignLeft,
                    f'{e.pps()} pkt/s   RSSI {e.rssi} dBm   floor {e.floor:.4f}')
-        p.drawText(QRectF(x, ny + 22, w, 22), Qt.AlignLeft, 'R = recalibrate    F = fullscreen    Esc = quit')
+        p.drawText(QRectF(x, ny + 22, w, 22), Qt.AlignLeft, 'R recalibrate · 4 / 6 Wi-Fi mode · F full · Esc quit')
+        # Wi-Fi link block
+        ly = ny + 52
+        p.setFont(QFont('DejaVu Sans', 11, QFont.Bold))
+        p.setPen(QColor(120, 140, 130))
+        p.drawText(QRectF(x, ly, w, 22), Qt.AlignLeft | Qt.AlignVCenter, 'WI-FI LINK')
+        names = {4: ('Wi-Fi 6 (802.11ax)', QColor(0, 230, 110)), 3: ('Wi-Fi 4 (802.11n)', QColor(255, 200, 0)),
+                 2: ('802.11g (legacy)', QColor(255, 140, 30)), 1: ('802.11b (legacy)', QColor(255, 140, 30))}
+        nm, col = names.get(e.std, ('no link yet' if e.state_mode else 'n/a (raw CSI firmware)', QColor(150, 165, 158)))
+        p.setFont(QFont('DejaVu Sans', 15, QFont.Bold))
+        p.setPen(col)
+        p.drawText(QRectF(x, ly + 22, w, 28), Qt.AlignLeft | Qt.AlignVCenter, nm)
+        p.setFont(QFont('DejaVu Sans', 10))
+        p.setPen(QColor(150, 165, 158))
+        offer = {True: 'Wi-Fi 6 (11b/g/n/ax)', False: 'Wi-Fi 4 only (11b/g/n)', None: '-'}[e.w6]
+        p.drawText(QRectF(x, ly + 52, w, 20), Qt.AlignLeft, f'board offers: {offer}')
+        p.drawText(QRectF(x, ly + 72, w, 20), Qt.AlignLeft, f'frames/s  HE {e.he} · HT {e.ht} · legacy {e.leg}')
+        p.drawText(QRectF(x, ly + 90, w, 20), Qt.AlignLeft, f'last CSI frame: {e.csi_len // 2} sub-carriers')
+        if e.w6 and e.std in (1, 2, 3):
+            p.setFont(QFont('DejaVu Sans', 9))
+            p.setPen(QColor(255, 200, 0))
+            p.drawText(QRectF(x, ly + 112, w, 34), Qt.AlignLeft | Qt.TextWordWrap,
+                       'Board offers Wi-Fi 6 but the link is not 802.11ax: the router / AP has no 802.11ax on 2.4 GHz.')
 
 
 def main():
@@ -430,10 +479,11 @@ def main():
     ap.add_argument('-p', '--port', default='/dev/ttyACM0')
     ap.add_argument('-b', '--baud', type=int, default=None, help='default: auto-detect (115200 / 921600)')
     ap.add_argument('-r', '--record', help='append raw CSI_DATA lines to this file')
+    ap.add_argument('--wifi', type=int, choices=(4, 6), help='ask the board for Wi-Fi 4 or Wi-Fi 6 mode')
     ap.add_argument('--grab', help='(testing) save a screenshot after 12 s and exit')
     a = ap.parse_args()
 
-    eng = CsiEngine(a.port, a.baud, a.record)
+    eng = CsiEngine(a.port, a.baud, a.record, a.wifi)
     app = QApplication(sys.argv)
     w = Radar(eng)
     w.show()

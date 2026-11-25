@@ -17,7 +17,12 @@ Giống bản đầy đủ nhưng **không có Access Point, DNS, mDNS và web s
 ## 3. Thao tác nút bấm
 ![Thao tác nút bấm](diagrams/button_flow.png)
 
-Mốc "giữ ≥ 10 s" (đổi chuẩn Wi-Fi 4 ⇄ Wi-Fi 6) là tính năng **sẽ thêm** cho thí nghiệm so sánh; các thao tác còn lại đã có trong firmware. Lưu ý: hiện tại bản đầy đủ tạo lại Access Point ngay lúc đủ 5 giây khi đang giữ, và sẽ chuyển sang thực hiện khi thả nút để nhường mốc 10 giây.
+Mọi thao tác xảy ra khi **thả nút**, màn hình hiện thanh tiến trình và việc sẽ làm. Mốc ≥ 10 s đổi chế độ liên kết **Wi-Fi 4 (802.11n) ⇄ Wi-Fi 6 (802.11ax)** của board radar; router/AP không bị đổi. Chế độ cũng đổi được từ máy tính (phím `4` / `6` trong cửa sổ radar, hoặc `--wifi 4|6`) và từ trang web.
+
+## Chế độ Wi-Fi 4 / Wi-Fi 6
+- **Board khai báo** khả năng của mình khi kết nối: Wi-Fi 4 = 11b/g/n, Wi-Fi 6 = 11b/g/n/ax. Liên kết chỉ lên 802.11ax khi **router/AP cũng hỗ trợ**.
+- **Chuẩn đang dùng** được đọc từ chuẩn đã thương lượng (phía kết nối) hoặc từ định dạng các khung nhận được (phía AP), và hiện kèm bộ đếm khung HE / HT / legacy mỗi giây.
+- CSI của khung HE được thu bằng `acquire_csi_su`; mỗi độ dài CSI có nền riêng để so sánh khung khác định dạng.
 
 ## Các giao thức dùng trong hệ thống
 | Lớp | Giao thức | Dùng để |

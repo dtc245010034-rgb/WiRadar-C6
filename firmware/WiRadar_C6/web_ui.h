@@ -46,6 +46,7 @@ canvas{display:block;width:100%;border-radius:10px;background:#050806}
   <div class="card"><canvas id="rad"></canvas>
     <div class="status s-mute" id="st">...</div>
     <div class="hint" id="stsub"></div>
+    <div class="hint" id="lk"></div>
     <div class="bar"><i id="lv"></i><b id="th"></b></div>
     <div class="acts"><button class="btn sec" id="recal">Recalibrate</button></div>
     <p class="hint">Ripples show how strong the motion is, not where it is. Keep the area clear during calibration.</p>
@@ -72,10 +73,16 @@ canvas{display:block;width:100%;border-radius:10px;background:#050806}
     <div class="row"><span>IP address</span><span id="w-ip">-</span></div>
     <div class="row"><span>Address</span><span>http://wiradar.local</span></div>
     <div class="row"><span>Signal</span><span id="w-rssi">-</span></div>
+    <div class="row"><span>Link standard</span><span id="w-std">-</span></div>
+    <div class="row"><span>Frames/s: HE · HT · legacy</span><span id="w-fmt">-</span></div>
+    <div class="row"><span>CSI length</span><span id="w-len">-</span></div>
+    <div class="row"><span>This device offers</span><span id="w-off">-</span></div>
     <div class="row"><span>CSI packets</span><span id="w-pps">-</span></div>
     <div class="row"><span>Uptime</span><span id="w-up">-</span></div>
+    <div class="acts"><button class="btn sec" id="m4">Offer Wi-Fi 4 only</button><button class="btn sec" id="m6">Offer Wi-Fi 6</button></div>
+    <p class="hint">The router is not changed: the link only becomes Wi-Fi 6 if the router supports 802.11ax on 2.4 GHz too. Switching reconnects the device for a few seconds.</p>
     <div class="acts"><a class="btn" href="/setup">Set up Wi-Fi</a><button class="btn bad" id="forget">Forget saved Wi-Fi</button></div>
-    <p class="hint">You can also hold the button on the device for 5 seconds to start the setup network again.</p>
+    <p class="hint">On the device: hold the button 5 s and release for the setup network again, or 10 s and release to switch Wi-Fi 4 / Wi-Fi 6.</p>
   </div>
 </section>
 
@@ -88,6 +95,9 @@ document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{
   ['radar','graph','clim','wifi'].forEach(t=>$('t-'+t).classList.toggle('hide',t!==b.dataset.t));
 });
 $('recal').onclick=()=>fetch('/api/recal',{method:'POST'});
+function setW(m){if(confirm('Switch to '+(m===6?'Wi-Fi 6 (11ax)':'Wi-Fi 4 (11n)')+' mode? The device reconnects and recalibrates.'))fetch('/api/wifimode',{method:'POST',body:new URLSearchParams({m:String(m)})})}
+$('m4').onclick=()=>setW(4);$('m6').onclick=()=>setW(6);
+const STD={4:'Wi-Fi 6',3:'Wi-Fi 4',2:'11g',1:'11b'};
 $('forget').onclick=()=>{if(confirm('Forget the saved Wi-Fi? The device will keep running in setup mode.'))fetch('/api/forget',{method:'POST'}).then(()=>alert('Saved Wi-Fi removed.'))};
 
 async function poll(){
@@ -100,7 +110,7 @@ async function poll(){
   setTimeout(poll,150);
 }
 function ui(){
-  const p=$('net');p.textContent=(S.net==='AP'?'Setup AP: ':'Wi-Fi: ')+S.ssid;p.className='pill on';
+  const p=$('net');p.textContent=(S.net==='AP'?'Setup AP: ':'Wi-Fi: ')+S.ssid+(S.std?' · '+STD[S.std]:'');p.className='pill on';
   const st=$('st'),sub=$('stsub');
   if(!S.data){st.textContent='NO CSI DATA';st.className='status s-warn';sub.textContent=S.net==='AP'?'Waiting for a phone to connect to the setup network...':'Waiting for packets from the router...'}
   else if(S.cal){st.textContent='CALIBRATING';st.className='status s-warn';sub.textContent='Keep the area clear ('+S.calLeft+' s)'}
@@ -118,6 +128,11 @@ function ui(){
   $('w-mode').textContent=S.net==='AP'?'Setup access point ('+S.sta+' phone'+(S.sta===1?'':'s')+')':'Connected to router';
   $('w-ssid').textContent=S.ssid;$('w-ip').textContent=S.ip;
   $('w-rssi').textContent=S.data?S.rssi+' dBm':'-';$('w-pps').textContent=S.pps+' / s';
+  $('w-std').textContent=S.stdName;$('w-fmt').textContent=S.he+' · '+S.ht+' · '+S.leg;
+  $('w-len').textContent=S.csiLen?(S.csiLen/2)+' sub-carriers':'-';
+  $('w-off').textContent=S.w6?'Wi-Fi 6 (11b/g/n/ax)':'Wi-Fi 4 only (11b/g/n)';
+  $('m4').style.borderColor=S.w6?'':'var(--ok)';$('m6').style.borderColor=S.w6?'var(--ok)':'';
+  $('lk').textContent='Link: '+S.stdName+(S.csiLen?' · CSI '+(S.csiLen/2)+' sub-carriers':'');
   const u=S.up,h=Math.floor(u/3600),m=Math.floor(u%3600/60),s=u%60;$('w-up').textContent=(h?h+' h ':'')+m+' min '+s+' s';
 }
 

@@ -86,14 +86,14 @@ def system_full():
     d.box(30, 340, 200, 100, 'Router Wi-Fi nhà', ['chế độ STA: nguồn CSI', '(khung trả lời ping)'], 'ext')
     d.box(30, 480, 200, 100, 'Điện thoại (test AP)', ['chế độ AP: nguồn CSI', 'là chính điện thoại'], 'ext')
     d.container(270, 50, 795, 800, 'ESP32-C6 · firmware WiRadar_C6   (nguồn 5 V qua USB-C)')
-    d.box(295, 90, 290, 110, 'Ngoại vi vào (GPIO)', ['đọc DHT11 mỗi 3 s', 'nút: ngắn = đổi màn · giữ 1 s = hiệu chỉnh', 'giữ 5 s = tạo lại Access Point'], 'gpio')
+    d.box(295, 90, 290, 110, 'Ngoại vi vào (GPIO)', ['đọc DHT11 mỗi 3 s', 'nút: ngắn = đổi màn · 1–5 s = hiệu chỉnh', '5–10 s = tạo lại AP · ≥10 s = Wi-Fi 4 ⇄ 6'], 'gpio')
     d.box(295, 245, 290, 70, 'Ping ICMP 100 gói/s', ['kích nguồn CSI trả lời liên tục'], 'wifi')
-    d.box(295, 350, 290, 110, 'Wi-Fi 802.11 + CSI', ['STA (vào router) hoặc SoftAP', 'callback CSI: biên độ, RSSI', 'chỉ lọc gói của nguồn CSI'], 'wifi')
+    d.box(295, 350, 290, 110, 'Wi-Fi 802.11 + CSI', ['STA (vào router) hoặc SoftAP', 'chế độ Wi-Fi 4 (11n) / Wi-Fi 6 (11ax)', 'callback CSI (cả khung HE): biên độ, RSSI'], 'wifi')
     d.box(295, 510, 290, 170, 'Xử lý CSI → mức chuyển động', ['chuẩn hoá biên độ mỗi gói', 'so với nền thích nghi chậm', 'làm mượt → mức chuyển động', 'hiệu chỉnh 5 s · ngưỡng + trễ', 'lịch sử 30 s'], 'proc')
     d.box(745, 90, 290, 110, 'Giao diện TFT (128×128)', ['4 màn: Mạng · Nhiệt độ/Ẩm', 'Radar · Đồ thị 30 s', 'vẽ vào bộ đệm rồi đẩy SPI'], 'ui')
     d.box(745, 350, 290, 130, 'Quản lý mạng', ['NVS lưu Wi-Fi nhà (SSID, mật khẩu)', 'AP "WiRadar-C6-Setup" (WPA2)', 'DHCP · DNS captive portal', 'mDNS: wiradar.local'], 'net')
     d.box(745, 520, 290, 140, 'Web server HTTP :80', ['/  bảng điều khiển · /setup  cấu hình Wi-Fi', '/api/state  (JSON 150 ms/lần)', '/api/scan · save · recal · forget', 'tab: Radar · Đồ thị · Nhiệt/Ẩm · Wi-Fi'], 'net')
-    d.box(745, 700, 290, 100, 'Serial USB (UART 921600)', ['STATE: 10 dòng/s (mức chuyển động)', 'CSI thô khi nhận lệnh "C"'], 'ser')
+    d.box(745, 700, 290, 100, 'Serial USB (UART 921600)', ['STATE: 10 dòng/s (chuyển động + chuẩn Wi-Fi)', 'CSI thô: "C" · đổi chế độ: "4" / "6"'], 'ser')
     d.box(1100, 95, 215, 100, 'Màn hình TFT ST7735', ['1.44" · SPI', 'SCK6 MOSI7 CS18 DC19 RST20'], 'ext')
     d.box(1100, 525, 215, 130, 'Điện thoại — trình duyệt', ['xem bảng điều khiển', 'cấu hình Wi-Fi nhà', 'cùng mạng hoặc vào AP'], 'ext')
     d.box(1100, 700, 215, 100, 'Máy tính', ['run2_viewer.sh (radar)', 'run_viewer.sh (CSI thô)'], 'ext')
@@ -123,13 +123,13 @@ def system_lite():
     d.box(30, 170, 200, 70, 'Cảm biến DHT11', ['GPIO1 · 1-wire'], 'ext')
     d.box(30, 340, 200, 100, 'Router Wi-Fi nhà', ['nguồn CSI', '(khung trả lời ping)'], 'ext')
     d.container(270, 50, 795, 660, 'ESP32-C6 · firmware WiRadar_C6_Lite   (nguồn 5 V qua USB-C)')
-    d.box(295, 90, 290, 110, 'Ngoại vi vào (GPIO)', ['đọc DHT11 mỗi 3 s', 'nút: ngắn = đổi màn', 'giữ ≥ 1 s = hiệu chỉnh'], 'gpio')
+    d.box(295, 90, 290, 110, 'Ngoại vi vào (GPIO)', ['đọc DHT11 mỗi 3 s', 'nút: ngắn = đổi màn · 1–10 s = hiệu chỉnh', '≥ 10 s = đổi Wi-Fi 4 ⇄ 6'], 'gpio')
     d.box(295, 245, 290, 70, 'Ping ICMP 100 gói/s', ['kích router trả lời liên tục'], 'wifi')
-    d.box(295, 350, 290, 110, 'Wi-Fi 802.11 + CSI', ['chỉ chế độ STA (vào router)', 'callback CSI: biên độ, RSSI', 'chỉ lọc gói của router'], 'wifi')
+    d.box(295, 350, 290, 110, 'Wi-Fi 802.11 + CSI', ['chỉ chế độ STA (vào router)', 'chế độ Wi-Fi 4 (11n) / Wi-Fi 6 (11ax)', 'callback CSI (cả khung HE): biên độ, RSSI'], 'wifi')
     d.box(295, 510, 290, 170, 'Xử lý CSI → mức chuyển động', ['chuẩn hoá biên độ mỗi gói', 'so với nền thích nghi chậm', 'làm mượt → mức chuyển động', 'hiệu chỉnh 5 s · ngưỡng + trễ', 'lịch sử 30 s'], 'proc')
     d.box(745, 90, 290, 110, 'Giao diện TFT (128×128)', ['4 màn: Mạng · Nhiệt độ/Ẩm', 'Radar · Đồ thị 30 s', 'vẽ vào bộ đệm rồi đẩy SPI'], 'ui')
     d.box(745, 350, 290, 130, 'Kết nối Wi-Fi (STA)', ['Wi-Fi lấy từ NVS (đã lưu)', 'hoặc secrets.h', 'DHCP · tự thử lại mỗi 20 s', 'không có AP, không web'], 'net')
-    d.box(745, 570, 290, 110, 'Serial USB (UART 921600)', ['STATE: 10 dòng/s', 'CSI thô khi nhận lệnh "C"'], 'ser')
+    d.box(745, 570, 290, 110, 'Serial USB (UART 921600)', ['STATE: 10 dòng/s (chuyển động + chuẩn Wi-Fi)', 'CSI thô: "C" · đổi chế độ: "4" / "6"'], 'ser')
     d.box(1100, 95, 190, 100, 'Màn hình TFT ST7735', ['1.44" · SPI', 'SCK6 MOSI7 CS18', 'DC19 RST20'], 'ext')
     d.box(1100, 570, 190, 110, 'Máy tính', ['run2_viewer.sh (radar)', 'run_viewer.sh (CSI thô)'], 'ext')
     d.arrow([(230, 105), (295, 125)])
@@ -171,18 +171,18 @@ def button_flow():
     full = [('Đổi màn hình', ['Mạng → Nhiệt/Ẩm → Radar', '→ Đồ thị → Mạng'], 'proc'),
             ('Hiệu chỉnh lại radar', ['giữ khu vực yên tĩnh 5 s', 'xoá lịch sử, tính lại mức nền'], 'proc'),
             ('Tạo lại Access Point', ['"WiRadar-C6-Setup"', 'điện thoại chọn Wi-Fi nhà'], 'net'),
-            ('Đổi chuẩn Wi-Fi 4 ⇄ 6', ['(kế hoạch) 11n ⇄ 11ax', 'tự kết nối lại + hiệu chỉnh'], 'wifi')]
+            ('Đổi chuẩn Wi-Fi 4 ⇄ 6', ['chỉ board radar đổi (11n ⇄ 11ax)', 'tự kết nối lại + hiệu chỉnh'], 'wifi')]
     for bx, (t, ls, k) in zip(cols, full):
         d.box(bx, 280, w, 80, t, ls, k)
     d.text(70, 412, 'Bản Lite (WiRadar_C6_Lite)', size=16, bold=True)
     lite = [('Đổi màn hình', ['Nhiệt/Ẩm → Radar → Đồ thị', '→ Mạng → Nhiệt/Ẩm'], 'proc'),
             ('Hiệu chỉnh lại radar', ['giữ khu vực yên tĩnh 5 s', 'xoá lịch sử, tính lại mức nền'], 'proc'),
             ('(không có hành động)', ['bản Lite không có Access Point', 'thả nút: như giữ 1–5 s'], 'gpio'),
-            ('Đổi chuẩn Wi-Fi 4 ⇄ 6', ['(kế hoạch) 11n ⇄ 11ax', 'tự kết nối lại + hiệu chỉnh'], 'wifi')]
+            ('Đổi chuẩn Wi-Fi 4 ⇄ 6', ['chỉ board radar đổi (11n ⇄ 11ax)', 'tự kết nối lại + hiệu chỉnh'], 'wifi')]
     for bx, (t, ls, k) in zip(cols, lite):
         d.box(bx, 430, w, 80, t, ls, k)
-    d.text(70, 566, 'Lưu ý: mốc "giữ ≥ 10 s" là tính năng sẽ thêm cho thí nghiệm so sánh Wi-Fi 4 / Wi-Fi 6. Mốc 5 s của bản đầy đủ', size=12.5, color='#57606a', italic=True)
-    d.text(70, 585, 'sẽ chuyển sang thực hiện khi thả nút (hiện tại firmware chạy ngay lúc đủ 5 s).', size=12.5, color='#57606a', italic=True)
+    d.text(70, 566, 'Router / AP không bị đổi: liên kết chỉ lên Wi-Fi 6 khi router cũng hỗ trợ 802.11ax ở 2.4 GHz.', size=12.5, color='#57606a', italic=True)
+    d.text(70, 585, 'Chuẩn đang dùng (đã thương lượng) hiện trên màn hình, trang web và cửa sổ trên máy tính.', size=12.5, color='#57606a', italic=True)
     return d
 
 

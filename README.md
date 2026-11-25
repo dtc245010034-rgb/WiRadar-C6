@@ -14,7 +14,8 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 - **Cấu hình Wi-Fi bằng điện thoại:** lần đầu cắm điện, board phát Access Point `WiRadar-C6-Setup` (mật khẩu `wiradar24`); điện thoại kết nối, chọn Wi-Fi nhà, nhập mật khẩu. Màn hình hiện tên Wi-Fi và địa chỉ IP.
 - **Bảng điều khiển trên điện thoại** (`http://<IP>` hoặc `http://wiradar.local`): Radar, Đồ thị 30 giây, Nhiệt độ - độ ẩm, thông tin Wi-Fi.
 - **Màn hình TFT ST7735 1.44"** với các màn: Mạng, Nhiệt độ - độ ẩm, Radar, Đồ thị.
-- **Một nút bấm:** bấm ngắn = đổi màn hình; giữ 1-5 giây = hiệu chỉnh lại radar; giữ 5 giây = tạo lại Access Point để cấu hình Wi-Fi mới.
+- **Một nút bấm** (hành động khi thả nút): bấm ngắn = đổi màn hình; giữ 1-5 giây = hiệu chỉnh lại radar; giữ 5-10 giây = tạo lại Access Point; giữ từ **10 giây = đổi Wi-Fi 4 ⇄ Wi-Fi 6**.
+- **Chế độ Wi-Fi 4 / Wi-Fi 6** và hiển thị chuẩn liên kết thật (802.11n hay 802.11ax) trên màn hình, trang web và cửa sổ trên máy tính; đổi được từ nút, web hoặc máy tính (`4` / `6`).
 - Test được **chỉ với một board ESP32-C6** (không cần màn hình, DHT11, nút): dùng nút BOOT trên board và xem bằng điện thoại ở chế độ AP.
 
 ## Giới hạn (nói thẳng)
@@ -28,6 +29,7 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 | `firmware/WiRadar_C6/` | **Firmware đầy đủ** (Arduino): AP cấu hình, web điện thoại, TFT, nút bấm, radar, xuất dữ liệu qua USB |
 | `firmware/WiRadar_C6_Lite/` | **Bản Lite, chỉ phần cứng** (không web, không AP): TFT + DHT11 + nút, nối thẳng vào router |
 | `scripts/flash.sh` | Biên dịch / nạp firmware bằng arduino-cli |
+| `scripts/make_lite.py` | Sinh bản Lite từ firmware đầy đủ (sửa bản đầy đủ rồi chạy lại) |
 | `run2_viewer.sh`, `run_viewer.sh` | Chạy cửa sổ radar / đồ thị CSI thô trên máy tính |
 | `viewer/` | Cửa sổ radar trên máy tính (`radar_viewer.py`) và công cụ vẽ CSI của Espressif |
 | `demo/preview.html` | Xem trước giao diện màn hình 128x128 khi chưa có phần cứng |
@@ -47,8 +49,9 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 ## Radar trên máy tính
 ```bash
 python3 -m venv csi-venv && ./csi-venv/bin/pip install -r viewer/requirements.txt
-./run2_viewer.sh            # radar trực quan; đóng Serial Monitor trước
-./run_viewer.sh             # đồ thị CSI thô của Espressif (tự bật luồng CSI_DATA trên WiRadar_C6)
+./run2_viewer.sh            # radar trực quan + chuẩn Wi-Fi; phím 4 / 6 đổi chế độ; đóng Serial Monitor trước
+./run_viewer.sh             # đồ thị CSI thô của Espressif (tự bật luồng CSI_DATA)
+./run2_viewer.sh --wifi 6   # (cả hai script) yêu cầu board dùng Wi-Fi 4 hoặc Wi-Fi 6
 ```
 
 ## Hộp in 3D

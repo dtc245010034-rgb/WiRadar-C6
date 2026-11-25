@@ -32,8 +32,9 @@ Mot chan nut -> GPIO2, chan con lai -> GND. (Dung dien tro keo len noi san cua c
 
 ## Cach dung (firmware WiRadar_C6; ban Lite giong nhung khong co Access Point/web)
 - Bam nut ngan: doi man hinh theo vong **Mang (Wi-Fi/IP) -> Nhiet do/Do am -> Radar -> Do thi -> Mang ...**
-- Giu nut 1-5 giay roi tha: **hieu chinh lai** radar (khi dang o Radar/Do thi).
-- Giu nut **5 giay**: tao lai Access Point `WiRadar-C6-Setup` de cau hinh Wi-Fi moi.
+- Giu nut 1-5 giay roi tha: **hieu chinh lai** radar.
+- Giu nut 5-10 giay roi tha (ban day du): tao lai Access Point `WiRadar-C6-Setup`.
+- Giu nut **10 giay tro len** roi tha: **doi Wi-Fi 4 <-> Wi-Fi 6** (board tu ket noi lai).
 - Khi chua gan nut ngoai, dung **nut BOOT (GPIO9)** tren board de thu.
 
 ## Neu man hinh sai mau / lech / co vien nhieu
