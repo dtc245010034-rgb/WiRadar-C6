@@ -33,6 +33,7 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 | `demo/preview.html` | Xem trước giao diện màn hình 128x128 khi chưa có phần cứng |
 | `case/` | Hộp in 3D tham số hoá (`make_case.py`, STL, xem 3D `viewer.html`) |
 | `docs/WIRING.md` | Sơ đồ nối dây |
+| `docs/ARCHITECTURE.md` | **Sơ đồ hệ thống** (bản đầy đủ, bản Lite, thao tác nút) và các giao thức dùng |
 
 ## Nạp firmware (Arduino IDE hoặc arduino-cli)
 1. Cài core **esp32 by Espressif Systems 3.x trở lên** (có hỗ trợ ESP32-C6).
