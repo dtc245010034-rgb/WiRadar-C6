@@ -134,6 +134,7 @@ tft = tft[:a] + '''static void push() {
     canvas.fillRect(10, 117, (int)(108UL * min<uint32_t>(held, 10000) / 10000), 3, held >= 10000 ? COL_GREEN : COL_YEL);
   }
   tft.drawRGBBitmap(0, 0, canvas.getBuffer(), W, H);
+  mirrorFrame();
 }
 
 ''' + tft[b:]
@@ -249,6 +250,9 @@ void loop() {
     int ch = Serial.read();
     if (ch == 'C') { if ((int32_t)(s_rawUntil - millis()) <= 0) s_rawSeq = 0; s_rawUntil = millis() + 3000; }
     else if (ch == 'c') s_rawUntil = 0;
+    else if (ch == 'S') s_mirrorUntil = millis() + 3000;
+    else if (ch == 'N') nextMode();
+    else if (ch == 'R') startCalibration();
     else if (ch == '4') pendingWifi = 4;
     else if (ch == '6') pendingWifi = 6;
   }

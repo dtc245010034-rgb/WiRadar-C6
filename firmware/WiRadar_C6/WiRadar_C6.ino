@@ -12,6 +12,7 @@
 //  * USB serial (921600): prints STATE lines that run2_viewer.sh draws as a radar on the PC.
 //    Send 'C' (repeat every second) to also stream raw CSI_DATA lines (run_viewer.sh does this), 'c' to stop.
 //    Send '4' or '6' to select the Wi-Fi 4 / Wi-Fi 6 mode from the laptop.
+//    'S' (every second) mirrors the screen to run3_viewer.sh; 'N' = next screen, 'R' = recalibrate.
 //  * Test without any parts: the board alone works (the phone's link is used as the CSI source).
 //
 // Board: ESP32C6 Dev Module | USB CDC On Boot: Disabled | Flash 16MB
@@ -507,6 +508,35 @@ static const uint16_t COL_BG = C(0, 0, 0), COL_GRID = C(0, 70, 30), COL_GREEN = 
 // button state (used by the overlay)
 static bool btnDown = false; static uint32_t btnT = 0;
 
+// ---- screen mirror for the PC (run3_viewer.sh): sends the same 128x128 frame the TFT gets ----
+static uint32_t s_mirrorUntil = 0;                       // on while 'S' keep-alives arrive (3 s)
+static void mirrorFrame(bool force = false) {
+  static uint32_t last = 0;
+  static uint8_t rle[12000];                             // runs of (count, colour hi, colour lo)
+  static char b64[16100];
+  uint32_t now = millis();
+  if ((int32_t)(s_mirrorUntil - now) <= 0 || (!force && now - last < 120)) return;
+  last = now;
+  const uint16_t *px = canvas.getBuffer();
+  size_t n = 0;
+  for (int i = 0; i < W * H;) {
+    uint16_t c = px[i]; int run = 1;
+    while (run < 255 && i + run < W * H && px[i + run] == c) run++;
+    if (n + 3 > sizeof(rle)) return;                     // picture too busy: skip this frame
+    rle[n++] = run; rle[n++] = c >> 8; rle[n++] = c & 0xFF;
+    i += run;
+  }
+  static const char T[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  size_t o = 0;
+  memcpy(b64, "FRAME,", 6); o = 6;
+  for (size_t i = 0; i < n; i += 3) {                    // length is a multiple of 3: no padding
+    uint32_t v = ((uint32_t)rle[i] << 16) | ((uint32_t)rle[i + 1] << 8) | rle[i + 2];
+    b64[o++] = T[v >> 18]; b64[o++] = T[(v >> 12) & 63]; b64[o++] = T[(v >> 6) & 63]; b64[o++] = T[v & 63];
+  }
+  b64[o++] = '\n';
+  if (serLock()) { Serial.write((const uint8_t *)b64, o); serUnlock(); }
+}
+
 static void push() {
   if (btnDown && millis() - btnT > 1000) {               // held: show what releasing now will do
     uint32_t held = millis() - btnT;
@@ -521,6 +551,7 @@ static void push() {
     canvas.fillRect(10, 117, (int)(108UL * min<uint32_t>(held, 10000) / 10000), 3, held >= 10000 ? COL_GREEN : COL_YEL);
   }
   tft.drawRGBBitmap(0, 0, canvas.getBuffer(), W, H);
+  mirrorFrame();
 }
 
 static void header(const char *title) {
@@ -557,7 +588,7 @@ static void drawNet() {
     fitPrint(4, 48, COL_WHITE, netSsid, 21);
     fitPrint(4, 62, COL_GRAY, "IP address:", 21);
     fitPrint(4, 72, COL_YEL, netIp, 21);
-    fitPrint(4, 86, COL_GRAY, "or http://wiradar.local", 21);
+    fitPrint(4, 86, COL_GRAY, "or wiradar.local", 21);
     fitPrint(4, 97, COL_GRAY, String(WiFi.RSSI()) + " dBm  offer W" + (wifi6 ? "6" : "4"), 21);
     int ls = linkStandard();
     fitPrint(4, 108, ls == 4 ? COL_GREEN : COL_YEL, String("Link: ") + stdTft(ls), 21);
@@ -710,6 +741,7 @@ static void handleButton() {                             // actions happen on re
   else if (!d && btnDown && now - btnEdge > 40) {
     btnDown = false; btnEdge = now;
     uint32_t held = now - btnT;
+    Serial.printf("[btn] released after %lu ms\n", (unsigned long)held);
     if (held >= 10000)      pendingWifi = wifi6 ? 4 : 6;  // switch Wi-Fi 4 <-> Wi-Fi 6
     else if (held >= 5000)  requestAP = true;             // setup Access Point again
     else if (held >= 1000)  startCalibration();           // recalibrate radar
@@ -728,6 +760,7 @@ static void splash(const char *l1, const char *l2 = "") {
   canvas.setCursor(10, 56); canvas.print(l1);
   canvas.setCursor(10, 68); canvas.print(l2);
   tft.drawRGBBitmap(0, 0, canvas.getBuffer(), W, H);
+  mirrorFrame(true);
 }
 
 static void applyWifiMode(int wm) {                      // 4 or 6; no-op if already in that mode
@@ -782,6 +815,9 @@ void loop() {
     int ch = Serial.read();
     if (ch == 'C') { if ((int32_t)(s_rawUntil - millis()) <= 0) s_rawSeq = 0; s_rawUntil = millis() + 3000; }
     else if (ch == 'c') s_rawUntil = 0;
+    else if (ch == 'S') s_mirrorUntil = millis() + 3000;  // screen mirror keep-alive
+    else if (ch == 'N') nextMode();                       // virtual button: next screen
+    else if (ch == 'R') startCalibration();
     else if (ch == '4') pendingWifi = 4;                 // laptop: Wi-Fi 4 mode
     else if (ch == '6') pendingWifi = 6;                 // laptop: Wi-Fi 6 mode
   }
@@ -814,6 +850,8 @@ void loop() {
     float t = dht.readTemperature(), h = dht.readHumidity();
     temp = isnan(t) ? NAN : t;
     hum = isnan(h) ? NAN : h;
+    if (isnan(temp) || isnan(hum)) Serial.println("[dht] no answer on GPIO1");
+    else Serial.printf("[dht] %.1f C  %.0f %%\n", temp, hum);
   }
 
   static uint32_t lastDraw = 0;

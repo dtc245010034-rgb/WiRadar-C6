@@ -51,6 +51,7 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 python3 -m venv csi-venv && ./csi-venv/bin/pip install -r viewer/requirements.txt
 ./run2_viewer.sh            # radar trực quan + chuẩn Wi-Fi; phím 4 / 6 đổi chế độ; đóng Serial Monitor trước
 ./run_viewer.sh             # đồ thị CSI thô của Espressif (tự bật luồng CSI_DATA)
+./run3_viewer.sh            # chiếu màn hình TFT của board lên máy tính (demo khi chưa có màn); Space = đổi màn
 ./run2_viewer.sh --wifi 6   # (cả hai script) yêu cầu board dùng Wi-Fi 4 hoặc Wi-Fi 6
 ```
 
