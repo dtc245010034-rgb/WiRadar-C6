@@ -2,12 +2,12 @@
 **/secrets.h
 .claude/
 
-# big or regenerated
-csi-venv/
-data/
-tools/arduino-cli/
+# local, created by you (not in the repo)
+csi-venv/          # python3 -m venv csi-venv  (see README)
+data/              # recordings written by scripts/radar.sh and scripts/raw.sh
+tools/arduino-cli/ # optional local copy of arduino-cli (flash.sh also accepts one on PATH)
 reference/
-build/
+build/             # arduino-cli build output (scripts/flash.sh)
 __pycache__/
 *.pyc
 *.log
