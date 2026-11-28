@@ -9,10 +9,10 @@
 //        hold 1..5 s      recalibrate the radar  (on release)
 //        hold 5..10 s     start the setup Access Point again (on release)
 //        hold 10 s+       switch Wi-Fi 4 (11n) <-> Wi-Fi 6 (11ax) mode, reconnects (on release)
-//  * USB serial (921600): prints STATE lines that run2_viewer.sh draws as a radar on the PC.
-//    Send 'C' (repeat every second) to also stream raw CSI_DATA lines (run_viewer.sh does this), 'c' to stop.
+//  * USB serial (921600): prints STATE lines that scripts/radar.sh draws as a radar on the PC.
+//    Send 'C' (repeat every second) to also stream raw CSI_DATA lines (scripts/raw.sh does this), 'c' to stop.
 //    Send '4' or '6' to select the Wi-Fi 4 / Wi-Fi 6 mode from the laptop.
-//    'S' (every second) mirrors the screen to run3_viewer.sh; 'N' = next screen, 'R' = recalibrate.
+//    'S' (every second) mirrors the screen to scripts/mirror.sh; 'N' = next screen, 'R' = recalibrate.
 //  * Test without any parts: the board alone works (the phone's link is used as the CSI source).
 //
 // Board: ESP32C6 Dev Module | USB CDC On Boot: Disabled | Flash 16MB
@@ -25,7 +25,6 @@
 #include <Preferences.h>
 #include <ESPmDNS.h>
 #include <SPI.h>
-#include <DHT.h>
 #include "esp_wifi.h"
 #include "ping/ping_sock.h"
 #define WIRADAR_FULL
@@ -33,17 +32,16 @@
 #include "csi_core.h"
 #include "wifi_mode.h"
 #include "tft_ui.h"
+#include "climate.h"
 #include "web_ui.h"
 
 // ---------------- Project ----------------
 #define PROJECT_NAME  "WiRadar-C6"
 #define AP_SSID       "WiRadar-C6-Setup"
-#define AP_PASS       "66666666"          // 8+ characters (WPA2)
 #define HOSTNAME      "wiradar"            // http://wiradar.local
 #define STA_TIMEOUT   15000                // ms to wait for the home Wi-Fi at boot
 
 
-DHT dht(PIN_DHT, DHT11);
 WebServer server(80);
 DNSServer dns;
 Preferences prefs;
@@ -71,9 +69,23 @@ static void saveCreds(const String &s, const String &p) {
   prefs.putString("ssid", s); prefs.putString("pass", p);
   prefs.end();
 }
-static void clearCreds() {
-  prefs.begin("wiradar", false); prefs.clear(); prefs.end();
+static void clearCreds() {                             // forget the home Wi-Fi only (keeps the AP password and the Wi-Fi 4/6 mode)
+  prefs.begin("wiradar", false); prefs.remove("ssid"); prefs.remove("pass"); prefs.end();
   savedSsid = ""; savedPass = "";
+}
+
+// Setup-AP password: random per device, created on the first boot and shown on the TFT / Serial (never a published default).
+static String apPass;
+static void loadApPass() {
+  prefs.begin("wiradar", false);
+  apPass = prefs.getString("appass", "");
+  if (apPass.length() < 8) {
+    static const char A[] = "abcdefghjkmnpqrstuvwxyz23456789";       // no look-alike characters (i l o 0 1)
+    apPass = "";
+    for (int i = 0; i < 10; i++) apPass += A[esp_random() % (sizeof(A) - 1)];
+    prefs.putString("appass", apPass);
+  }
+  prefs.end();
 }
 
 static String jsonEsc(const String &s) {
@@ -134,7 +146,7 @@ static void startAP() {
   WiFi.mode(WIFI_AP_STA);
   esp_wifi_set_protocol(WIFI_IF_AP, wifiProto());       // the setup AP offers the same standards
   esp_wifi_set_protocol(WIFI_IF_STA, wifiProto());
-  WiFi.softAP(AP_SSID, AP_PASS, 1, 0, 4);
+  WiFi.softAP(AP_SSID, apPass.c_str(), 1, 0, 4);
   delay(300);
   netMode = NET_AP;
   netSsid = AP_SSID;
@@ -144,7 +156,7 @@ static void startAP() {
   MDNS.addService("http", "tcp", 80);
   csiEnable();
   startCalibration();                                    // CSI starts when a phone joins
-  Serial.printf("[net] setup AP \"%s\" (pass %s), IP %s\n", AP_SSID, AP_PASS, netIp.c_str());
+  Serial.printf("[net] setup AP \"%s\" (pass %s), IP %s\n", AP_SSID, apPass.c_str(), netIp.c_str());
 }
 
 // ---- web handlers ----
@@ -251,7 +263,7 @@ static void drawNet() {
     canvas.setTextSize(1);
     fitPrint(4, 38, COL_GRAY, "1) Join this Wi-Fi:", 21);
     fitPrint(4, 48, COL_WHITE, netSsid, 21);
-    fitPrint(4, 58, COL_GRAY, String("   pass: ") + AP_PASS, 21);
+    fitPrint(4, 58, COL_GRAY, String("   pass: ") + apPass, 21);
     fitPrint(4, 72, COL_GRAY, "2) Open in browser:", 21);
     fitPrint(4, 82, COL_YEL, String("http://") + netIp, 21);
     fitPrint(4, 96, COL_GRAY, String("Phones joined: ") + WiFi.softAPgetStationNum(), 21);
@@ -326,7 +338,7 @@ void setup() {
   Serial.begin(921600);
   pinMode(PIN_BTN, INPUT_PULLUP);
   pinMode(PIN_BOOT, INPUT_PULLUP);
-  dht.begin();
+  climateStart();
 
   SPI.begin(PIN_SCK, -1, PIN_MOSI, -1);
   tft.initR(TFT_TAB);
@@ -338,6 +350,7 @@ void setup() {
 
   WiFi.onEvent(onWiFiEvent);
   loadCreds();
+  loadApPass();
   loadWifiMode();
   bool ok = false;
   if (savedSsid.length()) {
@@ -386,20 +399,13 @@ void loop() {
 
   updateMotionState(now);
 
-  static uint32_t lastDhtRead = 0;
-  // DHT11: every 3 s; when no sensor answers, only every 20 s (a failed read blocks ~170 ms)
-  if (now - lastDhtRead > ((isnan(temp) && isnan(hum)) ? 20000u : 3000u) || lastDhtRead == 0) {
-    lastDhtRead = now ? now : 1;
-    float t = dht.readTemperature(), h = dht.readHumidity();
-    temp = isnan(t) ? NAN : t;
-    hum = isnan(h) ? NAN : h;
-    if (isnan(temp) || isnan(hum)) Serial.println("[dht] no answer on GPIO1");
-    else Serial.printf("[dht] %.1f C  %.0f %%\n", temp, hum);
-  }
 
-  static uint32_t lastDraw = 0;
-  if (now - lastDraw >= (mode == MODE_RADAR ? 40u : 100u)) {
-    lastDraw = now;
+  // radar animates (40 ms); graph scrolls every 260 ms; the other screens change about once a second.
+  // A held button needs a quick refresh for its progress bar; a screen change redraws at once.
+  static uint32_t lastDraw = 0; static int drawnMode = -1;
+  uint32_t drawEvery = btnDown ? 60u : mode == MODE_RADAR ? 40u : mode == MODE_GRAPH ? 130u : 500u;
+  if ((int)mode != drawnMode || now - lastDraw >= drawEvery) {
+    drawnMode = (int)mode; lastDraw = now;
     switch (mode) {
       case MODE_NET:   drawNet(); break;
       case MODE_DHT:   drawDht(); break;
@@ -408,7 +414,7 @@ void loop() {
     }
   }
 
-  // Machine-readable state for the PC viewer (run2_viewer.sh), 10 lines per second
+  // Machine-readable state for the PC viewer (scripts/radar.sh), 10 lines per second
   static uint32_t lastState = 0;
   if (now - lastState >= 100) {
     lastState = now;

@@ -30,21 +30,30 @@ static const uint16_t COL_BG = C(0, 0, 0), COL_GRID = C(0, 70, 30), COL_GREEN = 
 // button state (used by the overlay)
 static bool btnDown = false; static uint32_t btnT = 0;
 
-// ---- screen mirror for the PC (run3_viewer.sh): sends the same 128x128 frame the TFT gets ----
+// ---- screen mirror for the PC (scripts/mirror.sh): sends the same 128x128 frame the TFT gets ----
 static uint32_t s_mirrorUntil = 0;                       // on while 'S' keep-alives arrive (3 s)
 static void mirrorFrame(bool force = false) {
+  static const size_t RLE_MAX = 12000, B64_MAX = 16100;
   static uint32_t last = 0;
-  static uint8_t rle[12000];                             // runs of (count, colour hi, colour lo)
-  static char b64[16100];
+  static uint8_t *rle = NULL;                            // runs of (count, colour hi, colour lo); ~28 KB, held only while mirroring
+  static char *b64 = NULL;
   uint32_t now = millis();
-  if ((int32_t)(s_mirrorUntil - now) <= 0 || (!force && now - last < 120)) return;
+  if ((int32_t)(s_mirrorUntil - now) <= 0) {             // mirror off: give the memory back
+    if (rle) { free(rle); rle = NULL; }
+    if (b64) { free(b64); b64 = NULL; }
+    return;
+  }
+  if (!force && now - last < 120) return;
+  if (!rle) rle = (uint8_t *)malloc(RLE_MAX);
+  if (!b64) b64 = (char *)malloc(B64_MAX);
+  if (!rle || !b64) return;
   last = now;
   const uint16_t *px = canvas.getBuffer();
   size_t n = 0;
   for (int i = 0; i < W * H;) {
     uint16_t c = px[i]; int run = 1;
     while (run < 255 && i + run < W * H && px[i + run] == c) run++;
-    if (n + 3 > sizeof(rle)) return;                     // picture too busy: skip this frame
+    if (n + 3 > RLE_MAX) return;                     // picture too busy: skip this frame
     rle[n++] = run; rle[n++] = c >> 8; rle[n++] = c & 0xFF;
     i += run;
   }
@@ -91,9 +100,10 @@ static void header(const char *title) {
   canvas.drawFastHLine(0, 13, W, COL_GRID);
 }
 
-static void fitPrint(int x, int y, uint16_t col, String s, int maxChars) {
-  if ((int)s.length() > maxChars) s = s.substring(0, maxChars - 1) + "~";
-  canvas.setTextColor(col); canvas.setCursor(x, y); canvas.print(s);
+static void fitPrint(int x, int y, uint16_t col, const String &s, int maxChars) {
+  canvas.setTextColor(col); canvas.setCursor(x, y);
+  if ((int)s.length() > maxChars) canvas.print(s.substring(0, maxChars - 1) + "~");
+  else canvas.print(s);
 }
 
 
@@ -211,7 +221,7 @@ static void drawGraph() {
   for (int x = gx + 1; x < gx + gw - 1; x += 6) canvas.drawFastHLine(x, Y(DETECT_RATIO), 3, COL_YEL);
   for (int i = 1; i < histN; i++) {
     int x1 = gx + gw - 2 - (histN - 1 - i), x0 = x1 - 1;
-    canvas.drawLine(x0, Y(histo[i - 1]), x1, Y(histo[i]), histo[i] > DETECT_RATIO ? COL_RED : COL_GREEN);
+    canvas.drawLine(x0, Y(histAt(i - 1)), x1, Y(histAt(i)), histAt(i) > DETECT_RATIO ? COL_RED : COL_GREEN);
   }
   canvas.setTextSize(1); canvas.setTextColor(COL_WHITE);
   canvas.setCursor(4, 106); canvas.printf("Now x%.1f  %lu pkt/s", motionRatio(), (unsigned long)pps);

@@ -5,15 +5,16 @@
 #include "esp_wifi.h"
 #include "ping/ping_sock.h"
 #include "config.h"
+#include "csi_math.h"
 
 // =====================================================================================
 //  CSI -> motion level
 // =====================================================================================
-#define NSUB 256                      // HE20 CSI has up to 245 sub-carriers; HT20 has fewer
-struct BaseSlot { int n; bool init; float b[NSUB]; };
-static BaseSlot s_slots[3];           // one baseline per CSI length (legacy / HT / HE frames differ)
-static float s_a[NSUB];
+#define NSUB CSI_NSUB                 // HE20 CSI has up to 245 sub-carriers; HT20 has fewer
+static CsiBaseline s_slots[3];        // one baseline per CSI length (legacy / HT / HE frames differ); maths in csi_math.h
+static int32_t s_a[NSUB];             // normalised amplitudes of the current packet (Q16)
 static volatile bool s_baseInit = false;
+static volatile bool s_resetReq = false;   // set by startCalibration() (other task); csi_cb clears the baselines itself
 static volatile uint32_t s_fmtHE = 0, s_fmtHT = 0, s_fmtLEG = 0;   // frames by 802.11 format
 static volatile int s_csiLen = 0;
 static volatile float s_motion = 0;
@@ -30,18 +31,20 @@ static inline void serUnlock() { if (s_serMux) xSemaphoreGive(s_serMux); }
 
 static volatile uint32_t s_rawUntil = 0;     // raw stream is on while 'C' keep-alives arrive (3 s)
 static uint32_t s_rawSeq = 0;
-static char s_rawLine[6000];
+static const size_t RAW_LINE_MAX = 6000;
+static char *s_rawLine = NULL;                    // allocated on the first raw packet (only when scripts/raw.sh asks for it)
 
 static void printRawCsi(wifi_csi_info_t *info) {   // same format as Espressif's esp-csi examples
   const wifi_pkt_rx_ctrl_t *rx = &info->rx_ctrl;
-  int n = snprintf(s_rawLine, sizeof(s_rawLine),
+  if (!s_rawLine) { s_rawLine = (char *)malloc(RAW_LINE_MAX); if (!s_rawLine) return; }
+  int n = snprintf(s_rawLine, RAW_LINE_MAX,
       "CSI_DATA,%lu,%02x:%02x:%02x:%02x:%02x:%02x,%d,%d,%d,%d,%d,%d,%lu,%d,%d,%d,%d,\"[%d",
       (unsigned long)s_rawSeq++, info->mac[0], info->mac[1], info->mac[2], info->mac[3], info->mac[4], info->mac[5],
       rx->rssi, rx->rate, rx->noise_floor, 0, 0, rx->channel, (unsigned long)rx->timestamp, rx->sig_len,
       rx->cur_bb_format, info->len, info->first_word_invalid, (int)info->buf[0]);
-  for (int i = 1; i < info->len && n < (int)sizeof(s_rawLine) - 8; i++)
-    n += snprintf(s_rawLine + n, sizeof(s_rawLine) - n, ",%d", (int)info->buf[i]);
-  n += snprintf(s_rawLine + n, sizeof(s_rawLine) - n, "]\"\n");
+  for (int i = 1; i < info->len && n < (int)RAW_LINE_MAX - 8; i++)
+    n += snprintf(s_rawLine + n, RAW_LINE_MAX - n, ",%d", (int)info->buf[i]);
+  n += snprintf(s_rawLine + n, RAW_LINE_MAX - n, "]\"\n");
   if (!serLock()) return;
   if (s_rawSeq == 1)                                   // header once, right before the first row
     Serial.print("type,seq,mac,rssi,rate,noise_floor,fft_gain,agc_gain,channel,local_timestamp,sig_len,rx_format,len,first_word,data\n");
@@ -57,46 +60,30 @@ static void csi_cb(void *ctx, wifi_csi_info_t *info) {
   if (fmt >= 4 && fmt <= 7) s_fmtHE++; else if (fmt == 2) s_fmtHT++; else s_fmtLEG++;
   s_csiLen = info->len;
 
+  if (s_resetReq) {                                    // calibration restarted: only this task touches the baselines
+    s_resetReq = false;
+    for (auto &x : s_slots) csi_baseline_reset(&x, 0);
+  }
   int n = info->len / 2;
   if (n > NSUB) n = NSUB;
   if (n < 16) return;
-
-  float sum = 0;
-  for (int i = 0; i < n; i++) {
-    int re = info->buf[2 * i + 1], im = info->buf[2 * i];
-    s_a[i] = sqrtf((float)(re * re + im * im));
-    sum += s_a[i];
-  }
-  if (sum <= 0) return;
-  float mean = sum / n;
-  for (int i = 0; i < n; i++) s_a[i] /= mean;        // removes AGC gain changes
+  if (!csi_normalize(info->buf, n, s_a)) return;       // amplitude / mean: removes AGC gain changes
 
   s_rssi = info->rx_ctrl.rssi;
   s_lastPktMs = millis();
   s_pkts++;
 
-  BaseSlot *sl = NULL;                                // baseline for this CSI length
+  CsiBaseline *sl = NULL;                              // baseline for this CSI length
   for (auto &x : s_slots) if (x.n == n) { sl = &x; break; }
   if (!sl) {
     for (auto &x : s_slots) if (x.n == 0) { sl = &x; break; }
     if (!sl) sl = &s_slots[0];
-    sl->n = n; sl->init = false;
+    csi_baseline_reset(sl, n);
   }
-  if (!sl->init) {
-    for (int i = 0; i < n; i++) sl->b[i] = s_a[i];
-    sl->init = true;
-    s_baseInit = true;
-    return;
-  }
-  float d = 0; int used = 0;
-  for (int i = 0; i < n; i++) {
-    if (s_a[i] < 0.05f && sl->b[i] < 0.05f) continue;
-    d += fabsf(s_a[i] - sl->b[i]);
-    used++;
-  }
-  if (!used) return;
-  d /= used;
-  for (int i = 0; i < n; i++) sl->b[i] += 0.003f * (s_a[i] - sl->b[i]);
+  bool wasInit = sl->init;
+  float d = csi_baseline_update(sl, s_a, n);
+  if (!wasInit) { s_baseInit = true; return; }
+  if (d < 0) return;
   s_motion = 0.95f * s_motion + 0.05f * d;
 }
 
@@ -137,14 +124,18 @@ static void pingStart(uint32_t ip4) {                 // ip4 in network byte ord
 static float floorMotion = 0.02f;
 static bool calibrating = true;
 static uint32_t calStart = 0;
-static float calSum = 0; static int calN = 0;
+#define CAL_SAMPLES 128                                // one sample every 50 ms during calibration
+static float calBuf[CAL_SAMPLES]; static int calN = 0; static uint32_t calLastSample = 0;
+static float calFloor = 0.02f;                         // floor found at calibration (floorMotion may drift within 0.5x..2x of it)
+static uint32_t quietSince = 0, lastAdapt = 0;
 static bool detected = false;
 static uint32_t detectUntil = 0;
 
 #define HIST_N   116                                   // 116 x 260 ms = ~30 s
 #define HIST_MS  260
-static float histo[HIST_N];
-static int histN = 0;
+static float histo[HIST_N];                            // ring buffer: oldest sample at histHead
+static int histN = 0, histHead = 0;
+static inline float histAt(int i) { return histo[(histHead + i) % HIST_N]; }   // i = 0 is the oldest
 static uint32_t lastHist = 0, lastPps = 0, lastPktsCnt = 0, pps = 0;
 static uint32_t lastHE = 0, lastHT = 0, lastLEG = 0, fmtHEs = 0, fmtHTs = 0, fmtLEGs = 0;   // frames per second by format
 
@@ -160,19 +151,23 @@ static int calLeft() {
 }
 
 static void startCalibration() {
-  calibrating = true; calStart = millis(); calSum = 0; calN = 0;
-  s_baseInit = false; histN = 0; detected = false;
-  for (auto &x : s_slots) { x.n = 0; x.init = false; }
+  calibrating = true; calStart = millis(); calN = 0; calLastSample = 0;
+  s_baseInit = false; histN = 0; histHead = 0; detected = false; quietSince = 0;
+  s_resetReq = true;                                   // the Wi-Fi task clears the baselines at its next packet
 }
 
 static void updateMotionState(uint32_t now) {
   bool data = haveData();
   if (calibrating) {
-    if (!data || !s_baseInit) { calStart = now; calSum = 0; calN = 0; }   // clock starts with the data
+    if (!data || !s_baseInit) { calStart = now; calN = 0; }   // clock starts with the data
     else {
-      calSum += s_motion; calN++;
+      if (calN == 0 || now - calLastSample >= 50) {
+        calLastSample = now;
+        if (calN < CAL_SAMPLES) calBuf[calN++] = s_motion;
+      }
       if (now - calStart > CAL_SECONDS * 1000UL) {
-        if (calN > 0) floorMotion = max(calSum / calN, 0.004f);
+        if (calN > 0) floorMotion = max(csi_median(calBuf, calN), 0.004f);   // median: someone walking by does not inflate it
+        calFloor = floorMotion; quietSince = 0; lastAdapt = now;
         calibrating = false;
       }
     }
@@ -182,11 +177,15 @@ static void updateMotionState(uint32_t now) {
     float m = s_motion;
     if (m > floorMotion * DETECT_RATIO) { detected = true; detectUntil = now + HOLD_MS; }
     else if (detected && m < floorMotion * RELEASE_RATIO && now > detectUntil) detected = false;
+    // after 10 s of quiet the floor drifts slowly (within 0.5x..2x of the calibrated value) with temperature / AGC changes
+    if (detected || m > floorMotion * RELEASE_RATIO) quietSince = 0;
+    else if (!quietSince) quietSince = now ? now : 1;
+    else if (now - quietSince > 10000 && now - lastAdapt >= 1000) { lastAdapt = now; floorMotion = csi_adapt_floor(floorMotion, calFloor, m, 0.02f); }
   }
   if (now - lastHist >= HIST_MS) {
     lastHist = now;
-    if (histN < HIST_N) histo[histN++] = motionRatio();
-    else { memmove(histo, histo + 1, (HIST_N - 1) * sizeof(float)); histo[HIST_N - 1] = motionRatio(); }
+    if (histN < HIST_N) histo[(histHead + histN++) % HIST_N] = motionRatio();
+    else { histo[histHead] = motionRatio(); histHead = (histHead + 1) % HIST_N; }
   }
   if (now - lastPps >= 1000) {
     lastPps = now; pps = s_pkts - lastPktsCnt; lastPktsCnt = s_pkts;

@@ -12,7 +12,7 @@ import os, shutil, sys
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 SRC = os.path.join(ROOT, 'firmware', 'WiRadar_C6')
 DST = os.path.join(ROOT, 'firmware', 'WiRadar_C6_Lite')
-SHARED = ['config.h', 'csi_core.h', 'csi_math.h', 'wifi_mode.h', 'tft_ui.h']
+SHARED = ['config.h', 'csi_core.h', 'csi_math.h', 'wifi_mode.h', 'tft_ui.h', 'climate.h']
 
 
 def main():

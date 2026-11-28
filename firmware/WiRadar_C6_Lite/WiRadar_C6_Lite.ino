@@ -21,13 +21,13 @@
 #include <WiFi.h>
 #include <Preferences.h>
 #include <SPI.h>
-#include <DHT.h>
 #include "esp_wifi.h"
 #include "ping/ping_sock.h"
 #include "config.h"
 #include "csi_core.h"
 #include "wifi_mode.h"
 #include "tft_ui.h"
+#include "climate.h"
 #if __has_include("secrets.h")
 #include "secrets.h"                       // optional: #define WIFI_SSID / WIFI_PASS
 #endif
@@ -36,7 +36,6 @@
 #define HOSTNAME      "wiradar-lite"
 #define STA_TIMEOUT   15000                // ms to wait for the router
 
-DHT dht(PIN_DHT, DHT11);
 
 // =====================================================================================
 //  Wi-Fi (station only)
@@ -156,7 +155,7 @@ void setup() {
   Serial.begin(921600);
   pinMode(PIN_BTN, INPUT_PULLUP);
   pinMode(PIN_BOOT, INPUT_PULLUP);
-  dht.begin();
+  climateStart();
 
   SPI.begin(PIN_SCK, -1, PIN_MOSI, -1);
   tft.initR(TFT_TAB);
@@ -204,20 +203,13 @@ void loop() {
 
   updateMotionState(now);
 
-  static uint32_t lastDhtRead = 0;
-  // DHT11: every 3 s; when no sensor answers, only every 20 s (a failed read blocks ~170 ms)
-  if (now - lastDhtRead > ((isnan(temp) && isnan(hum)) ? 20000u : 3000u) || lastDhtRead == 0) {
-    lastDhtRead = now ? now : 1;
-    float t = dht.readTemperature(), h = dht.readHumidity();
-    temp = isnan(t) ? NAN : t;
-    hum = isnan(h) ? NAN : h;
-    if (isnan(temp) || isnan(hum)) Serial.println("[dht] no answer on GPIO1");
-    else Serial.printf("[dht] %.1f C  %.0f %%\n", temp, hum);
-  }
 
-  static uint32_t lastDraw = 0;
-  if (now - lastDraw >= (mode == MODE_RADAR ? 40u : 100u)) {
-    lastDraw = now;
+  // radar animates (40 ms); graph scrolls every 260 ms; the other screens change about once a second.
+  // A held button needs a quick refresh for its progress bar; a screen change redraws at once.
+  static uint32_t lastDraw = 0; static int drawnMode = -1;
+  uint32_t drawEvery = btnDown ? 60u : mode == MODE_RADAR ? 40u : mode == MODE_GRAPH ? 130u : 500u;
+  if ((int)mode != drawnMode || now - lastDraw >= drawEvery) {
+    drawnMode = (int)mode; lastDraw = now;
     switch (mode) {
       case MODE_NET:   drawNet(); break;
       case MODE_DHT:   drawDht(); break;
@@ -226,7 +218,7 @@ void loop() {
     }
   }
 
-  // Machine-readable state for the PC viewer (run2_viewer.sh), 10 lines per second
+  // Machine-readable state for the PC viewer (scripts/radar.sh), 10 lines per second
   static uint32_t lastState = 0;
   if (now - lastState >= 100) {
     lastState = now;
