@@ -29,7 +29,7 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 | `firmware/WiRadar_C6/` | **Firmware đầy đủ** (Arduino): AP cấu hình, web điện thoại, TFT, nút bấm, radar, xuất dữ liệu qua USB |
 | `firmware/WiRadar_C6_Lite/` | **Bản Lite, chỉ phần cứng** (không web, không AP): TFT + DHT11 + nút, nối thẳng vào router |
 | `scripts/flash.sh` | Biên dịch / nạp firmware bằng arduino-cli |
-| `scripts/make_lite.py` | Sinh bản Lite từ firmware đầy đủ (sửa bản đầy đủ rồi chạy lại) |
+| `scripts/sync_shared.py` | Chép các header dùng chung (`config.h`, `csi_core.h`, `wifi_mode.h`, `tft_ui.h`) từ bản đầy đủ sang bản Lite; sửa ở `firmware/WiRadar_C6/` rồi chạy lại |
 | `scripts/radar.sh`, `raw.sh`, `mirror.sh` | Radar trên máy tính, đồ thị CSI thô, chiếu màn hình TFT |
 | `viewer/` | Cửa sổ radar trên máy tính (`radar_viewer.py`) và công cụ vẽ CSI của Espressif |
 | `demo/preview.html` | Xem trước giao diện màn hình 128x128 khi chưa có phần cứng |
