@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sketch: [WiRadar_C6, WiRadar_C6_Lite]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 core and libraries
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+          arduino-cli lib install "Adafruit GFX Library" "Adafruit ST7735 and ST7789 Library" "DHT sensor library" "Adafruit Unified Sensor"
+      - name: Compile ${{ matrix.sketch }}
+        run: |
+          arduino-cli compile \
+            --fqbn esp32:esp32:esp32c6:FlashSize=16M,PartitionScheme=app3M_fat9M_16MB \
+            --warnings default \
+            firmware/${{ matrix.sketch }}
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m py_compile viewer/*.py scripts/*.py case/make_case.py docs/make_diagrams.py
