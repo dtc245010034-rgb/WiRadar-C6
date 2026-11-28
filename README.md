@@ -11,7 +11,7 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 
 ## Nó làm được gì
 - Đọc **CSI** (Channel State Information) từ các gói Wi-Fi giữa ESP32-C6 và router, tính **mức chuyển động** và báo khi có người đi qua / vẫy tay giữa hai thiết bị.
-- **Cấu hình Wi-Fi bằng điện thoại:** lần đầu cắm điện, board phát Access Point `WiRadar-C6-Setup` (mật khẩu `wiradar24`); điện thoại kết nối, chọn Wi-Fi nhà, nhập mật khẩu. Màn hình hiện tên Wi-Fi và địa chỉ IP.
+- **Cấu hình Wi-Fi bằng điện thoại:** lần đầu cắm điện, board phát Access Point `WiRadar-C6-Setup` (mật khẩu được **tạo ngẫu nhiên ở lần chạy đầu** và hiện trên màn hình TFT / Serial); điện thoại kết nối, chọn Wi-Fi nhà, nhập mật khẩu. Màn hình hiện tên Wi-Fi và địa chỉ IP.
 - **Bảng điều khiển trên điện thoại** (`http://<IP>` hoặc `http://wiradar.local`): Radar, Đồ thị 30 giây, Nhiệt độ - độ ẩm, thông tin Wi-Fi.
 - **Màn hình TFT ST7735 1.44"** với các màn: Mạng, Nhiệt độ - độ ẩm, Radar, Đồ thị.
 - **Một nút bấm** (hành động khi thả nút): bấm ngắn = đổi màn hình; giữ 1-5 giây = hiệu chỉnh lại radar; giữ 5-10 giây = tạo lại Access Point; giữ từ **10 giây = đổi Wi-Fi 4 ⇄ Wi-Fi 6**.
@@ -30,7 +30,7 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 | `firmware/WiRadar_C6_Lite/` | **Bản Lite, chỉ phần cứng** (không web, không AP): TFT + DHT11 + nút, nối thẳng vào router |
 | `scripts/flash.sh` | Biên dịch / nạp firmware bằng arduino-cli |
 | `scripts/make_lite.py` | Sinh bản Lite từ firmware đầy đủ (sửa bản đầy đủ rồi chạy lại) |
-| `run2_viewer.sh`, `run_viewer.sh` | Chạy cửa sổ radar / đồ thị CSI thô trên máy tính |
+| `scripts/radar.sh`, `raw.sh`, `mirror.sh` | Radar trên máy tính, đồ thị CSI thô, chiếu màn hình TFT |
 | `viewer/` | Cửa sổ radar trên máy tính (`radar_viewer.py`) và công cụ vẽ CSI của Espressif |
 | `demo/preview.html` | Xem trước giao diện màn hình 128x128 khi chưa có phần cứng |
 | `case/` | Hộp in 3D **nằm ngang, lắp bằng khe** (`make_case.py`, STL, miếng thử, xem 3D `viewer.html`) |
@@ -49,15 +49,16 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 ## Radar trên máy tính
 ```bash
 python3 -m venv csi-venv && ./csi-venv/bin/pip install -r viewer/requirements.txt
-./run2_viewer.sh            # radar trực quan + chuẩn Wi-Fi; phím 4 / 6 đổi chế độ; đóng Serial Monitor trước
-./run_viewer.sh             # đồ thị CSI thô của Espressif (tự bật luồng CSI_DATA)
-./run3_viewer.sh            # chiếu màn hình TFT của board lên máy tính (demo khi chưa có màn); Space = đổi màn
-./run2_viewer.sh --wifi 6   # (cả hai script) yêu cầu board dùng Wi-Fi 4 hoặc Wi-Fi 6
+./scripts/radar.sh            # radar trực quan + chuẩn Wi-Fi; phím 4 / 6 đổi chế độ; đóng Serial Monitor trước
+./scripts/raw.sh              # đồ thị CSI thô của Espressif (cần thêm: pip install -r viewer/requirements-espressif.txt)
+./scripts/mirror.sh           # chiếu màn hình TFT của board lên máy tính (demo khi chưa có màn); Space = đổi màn
+./scripts/radar.sh --wifi 6   # (radar.sh và raw.sh) yêu cầu board dùng Wi-Fi 4 hoặc Wi-Fi 6
+# Cổng serial: đối số đầu tiên, hoặc biến môi trường WIRADAR_PORT (mặc định /dev/ttyACM0; Windows: COMx)
 ```
 
 ## Hộp in 3D
 Xem `case/README.md`: hộp nằm ngang 112.7 × 42.4 × 36.4 mm, màn hình, DHT11, board và nút đều lắp bằng khe (chỉ 4 vít ngoài nắp). In các miếng thử `out/fit_*.stl` trước. Mở `case/viewer.html` để xem 3D.
 
 ## Ghi công
-- `viewer/csi_data_read_parse.py`, `viewer/csi_viewer.html`: từ [espressif/esp-csi](https://github.com/espressif/esp-csi) (Apache-2.0).
+- `viewer/csi_data_read_parse.py`: từ [espressif/esp-csi](https://github.com/espressif/esp-csi) (Apache-2.0).
 - Thuật toán và giao diện radar, firmware, hộp 3D: viết cho đồ án này.

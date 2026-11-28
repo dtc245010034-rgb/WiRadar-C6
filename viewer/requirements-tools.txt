@@ -1,0 +1,4 @@
+# Công cụ sinh hộp 3D (case/make_case.py) và sơ đồ (docs/make_diagrams.py; PNG dùng PyQt5 từ requirements.txt)
+numpy
+trimesh
+shapely

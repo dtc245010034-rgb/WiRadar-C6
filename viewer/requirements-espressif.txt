@@ -1,0 +1,7 @@
+# Thêm cho đồ thị CSI thô của Espressif (scripts/raw.sh). Cài sau requirements.txt:
+#   pip install -r viewer/requirements.txt -r viewer/requirements-espressif.txt
+pandas
+pyqtgraph
+matplotlib
+scipy
+statsmodels
