@@ -1,7 +1,7 @@
 # Hộp WiRadar-C6 nằm ngang (lắp bằng khe, không dán)
 
 Kích thước ngoài: **112.7 × 42.4 × 36.4 mm** (rộng × cao × sâu). Xem 3D: mở `case/viewer.html`.
-Sinh lại: sửa số trong `PARAMS` của `make_case.py` rồi chạy `../csi-venv/bin/python make_case.py` (trong thư mục `case/`).
+Sinh lại: sửa số trong `PARAMS` của `make_case.py` rồi chạy `../csi-venv/bin/python make_case.py` (trong thư mục `case/`; cần `pip install -r ../viewer/requirements-tools.txt`).
 
 Nhìn vào mặt trước (mặt có màn hình):
 ```

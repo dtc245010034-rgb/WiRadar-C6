@@ -91,7 +91,7 @@ def system_full():
     d.box(295, 350, 290, 110, 'Wi-Fi 802.11 + CSI', ['STA (vào router) hoặc SoftAP', 'chế độ Wi-Fi 4 (11n) / Wi-Fi 6 (11ax)', 'callback CSI (cả khung HE): biên độ, RSSI'], 'wifi')
     d.box(295, 510, 290, 170, 'Xử lý CSI → mức chuyển động', ['chuẩn hoá biên độ mỗi gói', 'so với nền thích nghi chậm', 'làm mượt → mức chuyển động', 'hiệu chỉnh 5 s · ngưỡng + trễ', 'lịch sử 30 s'], 'proc')
     d.box(745, 90, 290, 110, 'Giao diện TFT (128×128)', ['4 màn: Mạng · Nhiệt độ/Ẩm', 'Radar · Đồ thị 30 s', 'vẽ vào bộ đệm rồi đẩy SPI'], 'ui')
-    d.box(745, 350, 290, 130, 'Quản lý mạng', ['NVS lưu Wi-Fi nhà (SSID, mật khẩu)', 'AP "WiRadar-C6-Setup" (WPA2)', 'DHCP · DNS captive portal', 'mDNS: wiradar.local'], 'net')
+    d.box(745, 350, 290, 130, 'Quản lý mạng', ['NVS lưu Wi-Fi nhà (SSID, mật khẩu)', 'AP "WiRadar-C6-Setup" (WPA2, mật khẩu ngẫu nhiên)', 'DHCP · DNS captive portal', 'mDNS: wiradar.local'], 'net')
     d.box(745, 520, 290, 140, 'Web server HTTP :80', ['/  bảng điều khiển · /setup  cấu hình Wi-Fi', '/api/state  (JSON 150 ms/lần)', '/api/scan · save · recal · forget', 'tab: Radar · Đồ thị · Nhiệt/Ẩm · Wi-Fi'], 'net')
     d.box(745, 700, 290, 100, 'Serial USB (UART 921600)', ['STATE: 10 dòng/s (chuyển động + chuẩn Wi-Fi)', 'CSI thô: "C" · đổi chế độ: "4" / "6"'], 'ser')
     d.box(1100, 95, 215, 100, 'Màn hình TFT ST7735', ['1.44" · SPI', 'SCK6 MOSI7 CS18 DC19 RST20'], 'ext')

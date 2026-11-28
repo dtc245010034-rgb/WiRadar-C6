@@ -26,7 +26,7 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 ## Cấu trúc thư mục
 | Thư mục | Nội dung |
 |---|---|
-| `firmware/WiRadar_C6/` | **Firmware đầy đủ** (Arduino): AP cấu hình, web điện thoại, TFT, nút bấm, radar, xuất dữ liệu qua USB |
+| `firmware/WiRadar_C6/` | **Firmware đầy đủ** (Arduino): AP cấu hình, web điện thoại, TFT, nút bấm, radar, xuất dữ liệu qua USB. Chia module: `csi_math.h` (toán CSI, có test), `csi_core.h` (bắt CSI, hiệu chỉnh, phát hiện), `wifi_mode.h`, `tft_ui.h`, `climate.h`, `config.h` (chân và ngưỡng) |
 | `firmware/WiRadar_C6_Lite/` | **Bản Lite, chỉ phần cứng** (không web, không AP): TFT + DHT11 + nút, nối thẳng vào router |
 | `scripts/flash.sh` | Biên dịch / nạp firmware bằng arduino-cli |
 | `scripts/sync_shared.py` | Chép các header dùng chung (`config.h`, `csi_core.h`, `wifi_mode.h`, `tft_ui.h`) từ bản đầy đủ sang bản Lite; sửa ở `firmware/WiRadar_C6/` rồi chạy lại |
@@ -35,11 +35,13 @@ tích hợp đo nhiệt độ - độ ẩm (DHT11), hiển thị trên màn hìn
 | `demo/preview.html` | Xem trước giao diện màn hình 128x128 khi chưa có phần cứng |
 | `case/` | Hộp in 3D **nằm ngang, lắp bằng khe** (`make_case.py`, STL, miếng thử, xem 3D `viewer.html`) |
 | `docs/WIRING.md` | Sơ đồ nối dây |
+| `docs/TESTING.md`, `docs/ROADMAP.md` | Kiểm thử (CI + việc cần đo trên board) và lộ trình BLE / Zigbee |
+| `tests/` | Test toán CSI trên máy tính (`g++`), chạy trong CI |
 | `docs/ARCHITECTURE.md` | **Sơ đồ hệ thống** (bản đầy đủ, bản Lite, thao tác nút) và các giao thức dùng |
 
 ## Nạp firmware (Arduino IDE hoặc arduino-cli)
 1. Cài core **esp32 by Espressif Systems 3.x trở lên** (có hỗ trợ ESP32-C6).
-2. Cài thư viện: *Adafruit GFX*, *Adafruit ST7735 and ST7789*, *DHT sensor library*, *Adafruit Unified Sensor*.
+2. Cài thư viện (CI biên dịch được với core esp32 4.0.0): *Adafruit GFX*, *Adafruit ST7735 and ST7789*, *DHT sensor library*, *Adafruit Unified Sensor*.
 3. Mở `firmware/WiRadar_C6/WiRadar_C6.ino`. Chọn board **ESP32C6 Dev Module**, *Flash Size 16MB*, *USB CDC On Boot: Disabled*.
 4. Upload (hoặc dùng `./scripts/flash.sh upload`; bản Lite: `./scripts/flash.sh lite upload`). Lần đầu board mở AP `WiRadar-C6-Setup` (xem Serial **921600** hoặc màn hình để biết IP). Mở cổng serial có thể làm board tự khởi động lại; đó là bình thường.
 
