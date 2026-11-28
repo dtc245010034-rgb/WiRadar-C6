@@ -42,6 +42,7 @@
 // =====================================================================================
 static String netSsid, netIp;
 static bool wifiOk = false;
+static bool radarApMode() { return false; }               // the Lite firmware has no setup AP
 
 static bool loadCreds(String &ssid, String &pass) {
   Preferences p;

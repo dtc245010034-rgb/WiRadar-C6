@@ -9,6 +9,7 @@
 
 Adafruit_ST7735 tft(&SPI, PIN_CS, PIN_DC, PIN_RST);
 GFXcanvas16 canvas(W, H);
+static bool radarApMode();                               // defined by each sketch: true while the setup AP is the CSI source
 static float temp = NAN, hum = NAN;                      // DHT11 values, written by the sketch
 
 enum Mode { MODE_NET, MODE_DHT, MODE_RADAR, MODE_GRAPH };
@@ -165,8 +166,8 @@ static void drawRadar() {
     canvas.setTextColor(COL_YEL);
     if (!data) {
       canvas.setCursor(14, cy - 12); canvas.print("NO CSI DATA");
-      canvas.setCursor(14, cy - 1);  canvas.print(netMode == NET_AP ? "Join the setup Wi-Fi" : "Waiting for packets");
-      canvas.setCursor(14, cy + 8);  canvas.print(netMode == NET_AP ? "with your phone" : "from the router");
+      canvas.setCursor(14, cy - 1);  canvas.print(radarApMode() ? "Join the setup Wi-Fi" : "Waiting for packets");
+      canvas.setCursor(14, cy + 8);  canvas.print(radarApMode() ? "with your phone" : "from the router");
     } else {
       canvas.setCursor(14, cy - 12); canvas.print("CALIBRATING...");
       canvas.setCursor(14, cy - 1);  canvas.print("Clear the area");

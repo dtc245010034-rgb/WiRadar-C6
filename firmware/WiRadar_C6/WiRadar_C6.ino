@@ -1,7 +1,7 @@
   // WiRadar-C6  -  Wi-Fi CSI motion detection on ESP32-C6
 // ---------------------------------------------------------------------------
 //  * Boot: join the saved Wi-Fi; if none (or it fails) open the setup Access Point
-//          "WiRadar-C6-Setup" (password: see AP_PASS). A phone joins it and picks the home Wi-Fi.
+//          "WiRadar-C6-Setup" (random password, shown on the TFT and Serial). A phone joins it and picks the home Wi-Fi.
 //  * Dashboard for phones: http://<ip>  or  http://wiradar.local   (Radar / Graph / Climate / Wi-Fi)
 //  * TFT ST7735 1.44" (optional): screens NET, TEMP/HUMIDITY, RADAR, GRAPH
 //  * Button (GPIO2, or the BOOT button GPIO9 for testing):
@@ -53,6 +53,7 @@ Preferences prefs;
 // =====================================================================================
 enum NetMode { NET_NONE, NET_STA, NET_AP };
 static NetMode netMode = NET_NONE;
+static bool radarApMode() { return netMode == NET_AP; }
 static String savedSsid, savedPass, netSsid, netIp;
 static volatile bool pendingStation = false;           // set by Wi-Fi event, handled in loop
 static uint8_t pendingMac[6]; static uint32_t pendingIp = 0;

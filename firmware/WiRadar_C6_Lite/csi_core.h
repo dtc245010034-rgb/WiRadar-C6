@@ -57,7 +57,7 @@ static void csi_cb(void *ctx, wifi_csi_info_t *info) {
   static uint32_t rawTick = 0;                         // raw stream: every RAW_EVERY-th packet; the old Python tool only keeps up with a few rows/s
   if ((int32_t)(s_rawUntil - millis()) > 0 && (rawTick++ % RAW_EVERY) == 0) printRawCsi(info);
   int fmt = info->rx_ctrl.cur_bb_format;               // 0/1 legacy, 2 HT (Wi-Fi 4), 4..7 HE (Wi-Fi 6)
-  if (fmt >= 4 && fmt <= 7) s_fmtHE++; else if (fmt == 2) s_fmtHT++; else s_fmtLEG++;
+  if (fmt >= 4 && fmt <= 7) s_fmtHE = s_fmtHE + 1; else if (fmt == 2) s_fmtHT = s_fmtHT + 1; else s_fmtLEG = s_fmtLEG + 1;   // single writer: this task
   s_csiLen = info->len;
 
   if (s_resetReq) {                                    // calibration restarted: only this task touches the baselines
@@ -71,7 +71,7 @@ static void csi_cb(void *ctx, wifi_csi_info_t *info) {
 
   s_rssi = info->rx_ctrl.rssi;
   s_lastPktMs = millis();
-  s_pkts++;
+  s_pkts = s_pkts + 1;
 
   CsiBaseline *sl = NULL;                              // baseline for this CSI length
   for (auto &x : s_slots) if (x.n == n) { sl = &x; break; }
